@@ -29,9 +29,9 @@ with the video, never for an LLM.
 4. **Edge refinement**: a stoppage starts at the first frame the ball is seen over a line (else
    the start of a long ball gap); it ends at a held-then-struck ball, else at the strike just
    after the ball reappears from a long gap, else where Viterbi put it.
-5. **Labels** (`sonar/make_submission.py`): dead → D; each alive stretch gets the team call
-   (currently the baseline's nearest player, majority ±2 s, kept inside the stretch and
-   nearest-filled so a possession never inherits the label from before a stoppage).
+5. **Labels** (`sonar/make_submission.py`): dead → D; each alive stretch gets the team call from
+   `sonar/possession.py` (see [POSSESSION.md](POSSESSION.md)). `--team nearest` uses the
+   baseline's nearest player instead, which is what the public numbers below were measured with.
 
 ## Facts about the data that shaped it (counts only)
 
@@ -85,7 +85,7 @@ in words:
 ## Next steps
 
 - Use the review answers to fix the end-anchor rule and the edge windows.
-- Swap the team call for role 2's possession model: `build_labels(dead, codes)` takes any
-  per-frame team codes.
+- On the public window only 3 of 20 true transitions land within 1 s, so edge timing matters
+  more than catching extra stoppages.
 - Add fouls and offsides: a whistle shows up as everyone decelerating together, with the ball
   inside the pitch.
