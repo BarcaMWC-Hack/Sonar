@@ -87,6 +87,7 @@ if __name__ == "__main__":
         ball_only = possession.ball_evidence(data, radius, falloff, slow, fast)
         for cost in SWEEP:
             report("r{} v{}-{} sw {}".format(radius, slow, fast, cost),
-                   possession.labels(dead, ball_only, cost), events)
-    print("With the default tag prior (tag agreement no longer independent):")
-    report("default", possession.labels(dead, possession.evidence(data, events)), events)
+                   possession.labels(dead, ball_only, switch_cost=cost), events)
+    print("Default (tags name the team only for live stretches with no ball evidence):")
+    report("default", possession.labels(dead, possession.ball_evidence(data),
+                                        possession.tag_evidence(events, len(dead))), events)

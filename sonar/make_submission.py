@@ -83,7 +83,8 @@ def main():
     events = load_smart_tagging.load()
     dead, _ = deadball.detect(data, events)
     if args.team == "control":
-        labels = possession.labels(dead, possession.evidence(data, events))
+        labels = possession.labels(dead, possession.ball_evidence(data),
+                                   possession.tag_evidence(events, len(dead)))
     else:
         labels = build_labels(dead, possession_baseline.nearest_team(data))
 

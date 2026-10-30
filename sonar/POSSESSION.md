@@ -31,39 +31,43 @@ through loose balls, so frames where nobody controls the ball should not vote.
 1. **Control-weighted evidence** per frame: full weight when the nearest player is within 1 m of
    a ball slower than 4 m/s, fading to nothing by 8 m/s or a few metres away, signed by which
    team's nearest player is closer.
-2. **Smart Tagging fills gaps**: phases like Build Up and Progression name the team in
-   possession (83-87% agreement with the controlled call). They add a small push only on frames
-   where the ball gives no evidence. The "Defending in …" codes are mirror copies naming the
-   other side and are ignored.
-3. **Viterbi with a switching cost** per live stretch: possession changes only when the new team
-   has built up enough control evidence.
+2. **Viterbi with a switching cost** per live stretch, on the ball evidence alone: possession
+   changes only when the new team has built up enough control evidence, and only the tracking
+   ever decides *when* it changes.
+3. **Smart Tagging names the team for a live stretch with no ball evidence at all.** Phases like
+   Build Up and Progression name the team in possession (83-87% agreement with the controlled
+   call), but their edges are seconds off, so they never place a change. (A first version let
+   them push on every untracked frame, which let tag edges move possession changes.) The
+   "Defending in …" codes are mirror copies naming the other side and are ignored.
 
 ## How the settings were chosen, without the ground truth
 
 | setting | possessions | mean | under 2 s | agrees with tags* |
 |---|---|---|---|---|
-| baseline nearest, ±2 s vote | 464 | 8.5 s | 111 | 66.5% |
-| control 1 m, switch 1.5 | 312 | 12.7 s | 47 | 70.8% |
-| **control 1 m, switch 3 (chosen)** | **266** | **14.9 s** | **26** | **72.0%** |
-| control 1 m, switch 12 | 175 | 22.6 s | 0 | 75.3% |
-| control 1.5 m, switch 6 | 272 | 14.5 s | 22 | 70.6% |
+| baseline nearest, ±2 s vote | 457 | 8.5 s | 110 | 66.2% |
+| control 1 m, switch 1.5 | 312 | 12.4 s | 51 | 70.7% |
+| **control 1 m, switch 3 (chosen)** | **265** | **14.6 s** | **30** | **72.2%** |
+| control 1 m, switch 12 | 173 | 22.3 s | 0 | 75.1% |
+| control 1.5 m, switch 6 | 271 | 14.3 s | 26 | 71.0% |
 
 \*Ball evidence only, so the tags are an independent check. Agreement rises as possessions get
 longer (tags are long phases), so the count is fixed from football's typical 10-15 s possession,
-and agreement only compares control definitions at a matched count. With the tag gap-filling
-the final file has 284 possessions of mean 14.0 s, and Barça has 59% of live time.
+and agreement only compares control definitions at a matched count. The final file (with the
+refined stoppage edges) has 267 possessions of mean 14.5 s, and Barça has 56% of live time.
 
 ## Public 5 minutes, as a correctness check only
 
 | | sonar | same dead ball, baseline team call | baseline_smooth50 |
 |---|---|---|---|
-| possessions (truth: 17, mean 14.2 s) | 17, mean 15.7 s | 25, 10.7 s | 26, 10.8 s |
-| spellF1 (5-95% bootstrap) | 0.435 (0.271-0.600) | 0.381 (0.257-0.505) | 0.326 (0.214-0.447) |
-| macroF1 | 0.749 | 0.752 | 0.621 |
+| possessions (truth: 17, mean 14.2 s) | 18, mean 15.0 s | 25, 10.8 s | 26, 10.8 s |
+| spellF1 (5-95% bootstrap) | 0.434 (0.263-0.606) | 0.391 (0.257-0.524) | 0.326 (0.214-0.447) |
+| macroF1 | 0.742 | 0.759 | 0.621 |
+| true changes matched within 1 s | 4 of 20 | 4 of 20 | 2 of 20 |
 
 The intervals overlap; this says the pipeline is right, not which version wins on the full match.
-What it does show: only 3 of 20 true transitions are matched within 1 s. **Edge timing is the
-next thing to fix**, for possession changes and stoppages alike.
+`tools/timing_report.py` shows most of our possession changes are still more than 3 s from a
+true one, in both directions. That looks like missed and extra changes rather than a constant
+offset, so better evidence (below) matters more than shifting edges.
 
 ## Ideas not yet tried
 
@@ -71,4 +75,7 @@ next thing to fix**, for possession changes and stoppages alike.
   where the players converge.
 - Make the evidence asymmetric: an interception followed by a pass between the new team's
   players is stronger evidence than one touch.
-- Place each change at the new team's first controlled touch rather than wherever Viterbi lands.
+- Check where a change lands: with no evidence while the ball is loose, the decoder puts the
+  change at the new team's first controlled touch, which matches CHALLENGE.md's "gains
+  controlled possession". A video check of a dozen changes would confirm the ground truth does
+  the same.

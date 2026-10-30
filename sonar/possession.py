@@ -12,15 +12,14 @@ So:
                  controls it, so it says nothing about a change)
         side     +1 / -1 by which team's nearest player is closer, saturating within a metre or two
      evidence = BALL_WEIGHT * control * speed * side
-  2. A small prior from Smart Tagging phases whose Team tag names the side in possession
-     (Build Up, Progression, ...: 64-87% agreement with the controlled call on this file), used
-     only on frames where the ball gives no evidence, so it fills tracking gaps without
-     overriding the tracking. The "Defending in ..." codes are mirror copies naming the other
-     side and are not used.
-  3. A two-state Viterbi per live stretch with SWITCH_COST: a change of possession has to be
+  2. A two-state Viterbi per live stretch with SWITCH_COST: a change of possession has to be
      paid for with that much accumulated control evidence by the new team.
+  3. Smart Tagging phases whose Team tag names the side in possession (Build Up, Progression,
+     ...: 64-87% agreement with the controlled call on this file) name the team for a live
+     stretch the ball says nothing about. They never place a change: their edges are seconds
+     off. The "Defending in ..." codes are mirror copies naming the other side and are not used.
 
-A live stretch with no evidence at all is left X, which the scorer carries forward.
+A live stretch with no evidence of either kind is left X, which the scorer carries forward.
 """
 
 import numpy as np
@@ -35,11 +34,11 @@ SLOW_BALL, FAST_BALL = 4.0, 8.0     # m/s
 UNKNOWN_SPEED_GATE = 0.5    # tracked ball whose speed cannot be computed (edge of a gap)
 SIDE_SCALE = 1.5            # m; difference in nearest distance that counts as clearly one side
 BALL_WEIGHT = 1.0
-TAG_WEIGHT = 0.05           # per frame, and only where the ball gives no evidence
-# Chosen without ground truth, from tools/possession_report.py: at 3.0 the match has 266
-# possessions of mean 14.9 s, inside the ~10-15 s typical of football; 25 gave 132 of 30 s and
-# 1.5 gave 312 with 47 under 2 s. At a matched count, a 1 m control radius agrees with the Smart
-# Tagging side more often than 1.5 m (72.0% vs 70.6%), so the tighter definition is kept.
+TAG_WEIGHT = 1.0            # only its sign over a whole evidence-free stretch is used
+# Chosen without ground truth, from tools/possession_report.py: at 3.0 the match has 265
+# possessions of mean 14.6 s, inside the ~10-15 s typical of football; 12 gave 173 of 22 s and
+# 1.5 gave 312 with 51 under 2 s. At a matched count, a 1 m control radius agrees with the Smart
+# Tagging side more often than 1.5 m (72.2% vs 71.0%), so the tighter definition is kept.
 SWITCH_COST = 3.0
 POSSESSION_CODES = {"build up", "progression", "creating chances", "attacking transition",
                     "ball in final third", "ball in the box", "long ball"}
@@ -86,14 +85,14 @@ def tag_evidence(events, n):
     return np.clip(out, -TAG_WEIGHT, TAG_WEIGHT)
 
 
-def evidence(data, events):
-    """Ball evidence, with the Smart Tagging prior filling only the frames it leaves at 0."""
-    ball = ball_evidence(data)
-    return np.where(ball != 0, ball, tag_evidence(events, len(ball)))
+def labels(dead, ball_ev, tag_ev=None, switch_cost=SWITCH_COST):
+    """Per-frame 'H' / 'A' / 'D' / 'X' over the graded halves; X elsewhere.
 
-
-def labels(dead, ev, switch_cost=SWITCH_COST):
-    """Per-frame 'H' / 'A' / 'D' / 'X' over the graded halves; X elsewhere."""
+    Inside each live stretch the ball evidence alone is decoded, so only the tracking ever
+    places a change of possession. Smart Tagging (tag_ev) speaks only for a stretch where the
+    ball gives no evidence at all, and then names one team for the whole stretch: its phase
+    edges are seconds off, which is fine for "who" and wrong for "when".
+    """
     out = np.full(len(dead), "X", dtype="<U1")
     for _, first, last in deadball.half_video_blocks(deadball.GAME):
         stop = last + 1
@@ -101,9 +100,11 @@ def labels(dead, ev, switch_cost=SWITCH_COST):
         out[first:stop][half_dead] = "D"
         edges = np.diff(np.concatenate(([0], (~half_dead).astype(np.int8), [0])))
         for a, b in zip(np.flatnonzero(edges == 1) + first, np.flatnonzero(edges == -1) + first):
-            stretch = ev[a:b]
-            if not np.any(stretch != 0):
-                continue    # no evidence at all: abstain, the scorer carries the last label
-            home = deadball.viterbi_two_state(stretch, switch_cost)
-            out[a:b] = np.where(home, "H", "A")
+            stretch = ball_ev[a:b]
+            if np.any(stretch != 0):
+                home = deadball.viterbi_two_state(stretch, switch_cost)
+                out[a:b] = np.where(home, "H", "A")
+            elif tag_ev is not None and tag_ev[a:b].sum() != 0:
+                out[a:b] = "H" if tag_ev[a:b].sum() > 0 else "A"
+            # else: no evidence at all; X, which the scorer carries from the last label
     return out
