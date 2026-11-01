@@ -12,9 +12,13 @@ So:
                  controls it, so it says nothing about a change)
         side     +1 / -1 by which team's nearest player is closer, saturating within a metre or two
      evidence = BALL_WEIGHT * control * speed * side
-  2. A two-state Viterbi per live stretch with SWITCH_COST: a change of possession has to be
-     paid for with that much accumulated control evidence by the new team.
-  3. Smart Tagging phases whose Team tag names the side in possession (Build Up, Progression,
+  2. Team shape (sonar/team_shape.py): the side with the ball spreads out, so a small
+     SHAPE_WEIGHT times the shape log-odds is added on every frame. It is slow, so it mostly
+     decides whether a run of touches really was a change, while the ball evidence still sets
+     where the change lands.
+  3. A two-state Viterbi per live stretch with SWITCH_COST: a change of possession has to be
+     paid for with that much accumulated evidence by the new team.
+  4. Smart Tagging phases whose Team tag names the side in possession (Build Up, Progression,
      ...: 64-87% agreement with the controlled call on this file) name the team for a live
      stretch the ball says nothing about. They never place a change: their edges are seconds
      off. The "Defending in ..." codes are mirror copies naming the other side and are not used.
@@ -24,7 +28,7 @@ A live stretch with no evidence of either kind is left X, which the scorer carri
 
 import numpy as np
 
-from sonar import deadball, possession_baseline as pb
+from sonar import deadball, possession_baseline as pb, team_shape
 
 # Params
 FPS = 25
@@ -40,6 +44,12 @@ TAG_WEIGHT = 1.0            # only its sign over a whole evidence-free stretch i
 # 1.5 gave 312 with 51 under 2 s. At a matched count, a 1 m control radius agrees with the Smart
 # Tagging side more often than 1.5 m (72.2% vs 71.0%), so the tighter definition is kept.
 SWITCH_COST = 3.0
+# Per frame, times the team-shape log-odds (sonar/team_shape.py). From the sweep in
+# tools/possession_report.py: at switch cost 3, weight 0.05 raises agreement with the Smart
+# Tagging side from 72.3% to 77.4% at a similar possession count (277 vs 267), and cuts switches
+# the new team barely controls from 59 to 43. Larger weights are no clearer (77.1-78.4%), and the
+# signal lags turnovers by seconds, so the smallest weight that captures the gain is kept.
+SHAPE_WEIGHT = 0.05
 POSSESSION_CODES = {"build up", "progression", "creating chances", "attacking transition",
                     "ball in final third", "ball in the box", "long ball"}
 TEAM_TAGS = {"barcelona": +1.0, "atletic club": -1.0}
@@ -85,13 +95,26 @@ def tag_evidence(events, n):
     return np.clip(out, -TAG_WEIGHT, TAG_WEIGHT)
 
 
+def evidence(data, dead, shape_weight=None):
+    """(evidence for the decoder, details): ball control plus the team-shape term."""
+    shape_weight = SHAPE_WEIGHT if shape_weight is None else shape_weight
+    ball = ball_evidence(data)
+    alive = deadball.graded_mask(len(dead)) & ~dead
+    x = team_shape.features(data)
+    w = team_shape.fit(x, ball, alive)
+    shape = team_shape.log_odds(x, w)
+    return ball + shape_weight * shape, {"ball": ball, "shape": shape, "shape_x": x,
+                                         "shape_weights": w, "alive": alive}
+
+
 def labels(dead, ball_ev, tag_ev=None, switch_cost=SWITCH_COST):
     """Per-frame 'H' / 'A' / 'D' / 'X' over the graded halves; X elsewhere.
 
-    Inside each live stretch the ball evidence alone is decoded, so only the tracking ever
-    places a change of possession. Smart Tagging (tag_ev) speaks only for a stretch where the
-    ball gives no evidence at all, and then names one team for the whole stretch: its phase
-    edges are seconds off, which is fine for "who" and wrong for "when".
+    Inside each live stretch the tracking evidence (ball_ev: ball control, plus team shape when
+    it comes from evidence()) is decoded, so only the tracking ever places a change of
+    possession. Smart Tagging (tag_ev) speaks only for a stretch where that evidence is zero
+    throughout, and then names one team for the whole stretch: its phase edges are seconds off,
+    which is fine for "who" and wrong for "when".
     """
     out = np.full(len(dead), "X", dtype="<U1")
     for _, first, last in deadball.half_video_blocks(deadball.GAME):

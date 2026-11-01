@@ -1,9 +1,12 @@
-"""Label-free checks on the possession call, and a sweep of its switching cost. Counts only.
+"""Label-free checks on the possession call, and a sweep of its settings. Counts only.
 
 For each setting: how many possessions (maximal H or A runs, X carried forward as the scorer
-does), their mean and median length, how many are under 2 s, Barça's share of live time, and how
-often our call agrees with the side Smart Tagging names in possession phases (64-87% for the raw
-controlled call, so this is a consistency check, not an answer key).
+does) and their length; how many switches inside live play are reversed within 3 s, or get
+almost no control by the new team in the 2 s after (both are touches and deflections, which
+CHALLENGE.md says are not changes); Barca's share of live time; and how often the call agrees with
+the side Smart Tagging names in possession phases. The tags feed neither the ball nor the shape
+evidence, so that agreement is an independent check -- but it rises with longer possessions,
+because the phases are long, so compare settings at a similar possession count.
 
     python tools/possession_report.py
 """
@@ -17,13 +20,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 from games import GAME, half_video_blocks  # noqa: E402
-from sonar import atd, deadball, possession, possession_baseline  # noqa: E402
+from sonar import atd, deadball, possession, possession_baseline, team_shape  # noqa: E402
 from sonar.make_submission import build_labels  # noqa: E402
 from starter import load_smart_tagging  # noqa: E402
+from tools.deadball_report import auc  # noqa: E402
 
 # Params
 FPS = 25
-SWEEP = (1.5, 3.0, 6.0, 12.0)
+SWITCH_COSTS = (3.0, 6.0, 12.0, 25.0)
+SHAPE_WEIGHTS = (0.0, 0.05, 0.1, 0.2)
+WEAK_SUPPORT = 3.0      # frames of full control in the 2 s after a switch
 
 
 def carried(labels):
@@ -39,16 +45,25 @@ def possession_runs(labels):
     runs = []
     for _, first, last in half_video_blocks(GAME):
         seg = labels[first:last + 1]
-        start = None
-        for i in range(len(seg) + 1):
-            here = seg[i] if i < len(seg) else "#"
-            if start is not None and here != seg[start]:
-                if seg[start] in "HA":
-                    runs.append(i - start)
-                start = i
-            elif start is None:
-                start = i
+        breaks = np.flatnonzero(seg[1:] != seg[:-1]) + 1
+        bounds = np.concatenate(([0], breaks, [len(seg)]))
+        runs += [b - a for a, b in zip(bounds[:-1], bounds[1:]) if seg[a] in "HA"]
     return np.array(runs) / FPS
+
+
+def switch_quality(labels, ball_ev):
+    """(reversed within 3 s, weakly supported) over switches between H and A inside live play."""
+    reversed_ = weak = 0
+    for _, first, last in half_video_blocks(GAME):
+        seg = labels[first:last + 1]
+        for i in np.flatnonzero((seg[1:] != seg[:-1]) & np.isin(seg[1:], ("H", "A")) &
+                                np.isin(seg[:-1], ("H", "A"))) + 1:
+            f, team = first + int(i), seg[i]
+            other = "A" if team == "H" else "H"
+            reversed_ += bool(np.any(labels[f + 1:f + 3 * FPS] == other))
+            sign = 1.0 if team == "H" else -1.0
+            weak += np.sum(np.clip(sign * ball_ev[f:f + 2 * FPS], 0, None)) < WEAK_SUPPORT
+    return reversed_, weak
 
 
 def tag_agreement(labels, events):
@@ -64,30 +79,54 @@ def tag_agreement(labels, events):
     return agree / max(total, 1)
 
 
-def report(name, labels, events):
+def report(name, labels, events, ball_ev):
     labels = carried(labels)
     runs = possession_runs(labels)
     graded = deadball.graded_mask(len(labels))
     live = np.isin(labels[graded], ("H", "A"))
-    print("  {:<24} {:>4} possessions | mean {:>5.1f} s, median {:>5.1f} s, {:>3} under 2 s | "
-          "Barca {:>4.1%} of live | tag agreement {:.1%}".format(
-              name, len(runs), runs.mean(), np.median(runs), int(np.sum(runs < 2)),
+    reversed_, weak = switch_quality(labels, ball_ev)
+    print("  {:<22} {:>4} poss | mean {:>5.1f} s, median {:>5.1f} s | reversed<3s {:>3}, "
+          "weak {:>3} | Barca {:>4.1%} | tags {:.1%}".format(
+              name, len(runs), runs.mean(), np.median(runs), reversed_, weak,
               np.mean(labels[graded][live] == "H"), tag_agreement(labels, events)))
+
+
+def shape_cross_half(x, ball_ev, alive):
+    blocks = half_video_blocks(GAME)
+    first = np.zeros(len(x), dtype=bool)
+    first[blocks[0][1]:blocks[0][2] + 1] = True
+    usable = team_shape.training_mask(ball_ev, alive, x)
+    y = ball_ev > 0
+    for train, test, label in ((first, ~first, "1->2"), (~first, first, "2->1")):
+        w = deadball.fit_logistic(x[usable & train], y[usable & train].astype(float))
+        s = team_shape.log_odds(x[usable & test], w)
+        print("  team-shape model, fit half {} and score the other: AUC {:.3f} on {} frames".format(
+            label, auc(s, y[usable & test]), int((usable & test).sum())))
 
 
 if __name__ == "__main__":
     data = atd.load()
     events = load_smart_tagging.load()
     dead, _ = deadball.detect(data, events)
-    print("Possession call on the full match (football reference: possessions of ~10-15 s)")
+    n = len(dead)
+    tags = possession.tag_evidence(events, n)
+    _, det = possession.evidence(data, dead)
+    ball, shape = det["ball"], det["shape"]
+
+    print("Team-shape evidence (labels: live frames with clear ball control)")
+    print("  weights: {}".format(dict(zip(("bias",) + team_shape.NAMES,
+                                          det["shape_weights"].tolist()))))
+    shape_cross_half(det["shape_x"], ball, det["alive"])
+
+    print("\nPossession call on the full match (football reference: ~10-15 s possessions)")
     report("nearest, +/-2 s vote", build_labels(dead, possession_baseline.nearest_team(data)),
-           events)
-    print("Ball evidence only (no tag prior), so tag agreement is an independent check:")
-    for radius, falloff, slow, fast in ((1.0, 1.0, 4.0, 8.0), (1.5, 1.5, 5.0, 10.0)):
-        ball_only = possession.ball_evidence(data, radius, falloff, slow, fast)
-        for cost in SWEEP:
-            report("r{} v{}-{} sw {}".format(radius, slow, fast, cost),
-                   possession.labels(dead, ball_only, switch_cost=cost), events)
-    print("Default (tags name the team only for live stretches with no ball evidence):")
-    report("default", possession.labels(dead, possession.ball_evidence(data),
-                                        possession.tag_evidence(events, len(dead))), events)
+           events, ball)
+    for weight in SHAPE_WEIGHTS:
+        for cost in SWITCH_COSTS:
+            tag = "  <- default" if (cost, weight) == (possession.SWITCH_COST,
+                                                       possession.SHAPE_WEIGHT) else ""
+            report("sw {:>4} shape {:<4}".format(cost, weight),
+                   possession.labels(dead, ball + weight * shape, tags, switch_cost=cost),
+                   events, ball)
+            if tag:
+                print(tag)
