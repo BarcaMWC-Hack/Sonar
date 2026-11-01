@@ -7,12 +7,9 @@ the ATD and Smart Tagging; nothing reads a ground truth except the scorer, after
 .venv\Scripts\python.exe -m sonar.make_submission        # evaluation/results/sonar.csv
 .venv\Scripts\python.exe tools\deadball_report.py --grid # weights, checks, label-free sweep
 .venv\Scripts\python.exe tools\deadball_diagnostics.py   # how each raw feature separates
-.venv\Scripts\python.exe tools\make_review_sheet.py      # sheet for checking against video
 ```
 
-All four print scores, counts and shares only, so their output is safe to paste anywhere. The
-review sheet is the exception: it is written to `data/review/` (git-ignored) and is for teammates
-with the video, never for an LLM.
+All three print scores, counts and shares only, so their output is safe to paste anywhere.
 
 ## How it works
 
@@ -69,22 +66,16 @@ The team call is identical in both, so the difference is the dead-ball detector.
 intervals overlap almost completely, as they must on 17 possessions. This shows the pipeline is
 wired correctly, not that it is better on the full match.
 
-## Open questions for whoever has the video
+## No hand labels on this match
 
-Fill in `data/review/stoppages_review.csv` for 10-20 rows of each `end_rule` and report totals
-in words:
-
-1. **Restart timing.** For `reacquire_kick` and `reacquire` rows, is the restart kick before or
-   after the `stop_video_time`, and by about how much? This decides whether the "ball
-   reappears" anchor should move earlier.
-2. **Missed stoppages.** Watch a few minutes of the second half: which kinds of stoppage get no
-   row at all (quick throw-ins, fouls, offsides)?
-3. **False stoppages.** Rows with no `nearest_set_piece`: are they real (fouls, injuries) or slow
-   spells of open play?
+RULES.md (clarified Nov 1) bars hand labels on the provided game for any purpose, including
+validation, so there is no video review sheet. Watching the video to understand the game and
+design features is fine; turning what was seen into labels, corrections or frame-specific
+constants is not. Edge rules are checked only against label-free football norms and Smart
+Tagging.
 
 ## Next steps
 
-- Use the review answers to fix the end-anchor rule and the edge windows.
 - Swap the team call for role 2's possession model: `build_labels(dead, codes)` takes any
   per-frame team codes.
 - Add fouls and offsides: a whistle shows up as everyone decelerating together, with the ball
