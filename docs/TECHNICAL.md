@@ -64,10 +64,11 @@ Inputs (ATD, Smart Tagging) → dead ball → who has it → switch timing → f
 ## Reproducibility and data handling
 
 ```
+python -m pip install -r requirements-sonar.txt
 python -m sonar.make_submission
 ```
 
-Python 3.11, numpy and pandas only, no randomness, weights rounded to 4 decimals. No match data committed or given to any hosted model; scripts print only scores, counts and shares.
+Python 3.11.9 with numpy 2.4.6 and pandas 3.0.6 only (pinned in `requirements-sonar.txt`), no randomness, weights rounded to 4 decimals. No match data committed or given to any hosted model; scripts print only scores, counts and shares.
 
 ## Limitations and next steps
 
