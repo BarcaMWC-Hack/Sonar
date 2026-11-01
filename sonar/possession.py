@@ -36,8 +36,8 @@ from sonar import deadball, possession_baseline as pb, team_shape
 # Params
 FPS = 25
 CONTROL_RADIUS = 1.0        # m; within this the nearest player has the ball at their feet
-CONTROL_FALLOFF = 1.0       # m; evidence falls by e every metre beyond it
-SLOW_BALL, FAST_BALL = 4.0, 8.0     # m/s
+CONTROL_FALLOFF = 2.0       # m; evidence falls by e every metre beyond it
+SLOW_BALL, FAST_BALL = 5.0, 10.0     # m/s
 UNKNOWN_SPEED_GATE = 0.5    # tracked ball whose speed cannot be computed (edge of a gap)
 SIDE_SCALE = 1.5            # m; difference in nearest distance that counts as clearly one side
 BALL_WEIGHT = 1.0
