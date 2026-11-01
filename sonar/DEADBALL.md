@@ -7,12 +7,9 @@ the ATD and Smart Tagging; nothing reads a ground truth except the scorer, after
 .venv\Scripts\python.exe -m sonar.make_submission        # evaluation/results/sonar.csv
 .venv\Scripts\python.exe tools\deadball_report.py --grid # weights, checks, label-free sweep
 .venv\Scripts\python.exe tools\deadball_diagnostics.py   # how each raw feature separates
-.venv\Scripts\python.exe tools\make_review_sheet.py      # sheet for checking against video
 ```
 
-All four print scores, counts and shares only, so their output is safe to paste anywhere. The
-review sheet is the exception: it is written to `data/review/` (git-ignored) and is for teammates
-with the video, never for an LLM.
+All three print scores, counts and shares only, so their output is safe to paste anywhere.
 
 ## How it works
 
@@ -27,7 +24,7 @@ with the video, never for an LLM.
 3. **Two-state Viterbi** per half with a switching cost, so a stoppage needs a few seconds of
    evidence and a slow moment cannot split a possession.
 4. **Edge refinement** from unsmoothed signals, because the Viterbi edges inherit up to 10 s of
-   smoothing. `start_rule` / `end_rule` in the review sheet say which rule placed each edge.
+   smoothing. Each edge records which rule placed it (`start_rule` / `end_rule`).
    - **Start:** the first frame the ball is over a line (`crossing`, 29 stoppages). Otherwise
      the moment the players decelerate, i.e. the biggest drop in mean speed comparing the next
      2 s with the previous 2 s (`motion`, 37), or the ball vanishing just before that (`gap`, 13).
@@ -36,7 +33,7 @@ with the video, never for an LLM.
      held ball struck (`kick`, 5) or the ball reappearing (`reacquire`, 27), else any ball going
      fast (`strike`, 23), else the acceleration itself (`motion`, 24). Every kind of restart is
      the first strike of a held, placed or unseen ball; later strikes are open play.
-5. **Labels** (`sonar/make_submission.py`): dead → D; each alive stretch gets the team call from
+5. **Labels** (`sonar/make_submission.py`): dead Ã¢â€ â€™ D; each alive stretch gets the team call from
    `sonar/possession.py` (see [POSSESSION.md](POSSESSION.md)). `--team nearest` uses the
    baseline's nearest player instead, which is what the public numbers below were measured with.
 
@@ -55,7 +52,7 @@ with the video, never for an LLM.
 
 | check | result |
 |---|---|
-| weak labels, fit on one half and score the other | AUC 0.82 (1→2), 0.87 (2→1) |
+| weak labels, fit on one half and score the other | AUC 0.82 (1Ã¢â€ â€™2), 0.87 (2Ã¢â€ â€™1) |
 | dead share of graded time (a match: ~40%) | 38.2% |
 | stoppages (a match: ~80-130) | 80, median 19 s |
 | tagged set pieces with a predicted restart within 5 s | 51 of 58 |
@@ -81,23 +78,16 @@ public window (counts only). It explains what the edges mean; it is ~20 events a
 used to tune. The edge rules above were changed once after looking at it, because it exposed a
 reasoning flaw (taking the *latest* ball event caught the first open-play pass), and not again.
 
-## Open questions for whoever has the video
+## No hand labels on this match
 
-Fill in `data/review/stoppages_review.csv` for 10-20 rows of each `end_rule` and report totals
-in words:
-
-1. **Restart timing.** For each `end_rule` (`reacquire`, `strike`, `kick`, `motion`), is the
-   real restart before or after `stop_video_time`, and by about how much? Same for
-   `start_rule` (`crossing`, `gap`, `motion`) against the whistle or the ball going out. A
-   consistent offset for one rule is a one-line fix.
-2. **Missed stoppages.** Watch a few minutes of the second half: which kinds of stoppage get no
-   row at all (quick throw-ins, fouls, offsides)?
-3. **False stoppages.** Rows with no `nearest_set_piece`: are they real (fouls, injuries) or slow
-   spells of open play?
+RULES.md (clarified Nov 1) bars hand labels on the provided game for any purpose, including
+validation, so there is no video review sheet. Watching the video to understand the game and
+design features is fine; turning what was seen into labels, corrections or frame-specific
+constants is not. Edge rules are checked only against label-free football norms and Smart
+Tagging.
 
 ## Next steps
 
-- Use the review answers to correct each edge rule's offset.
 - On the public window only 4 of 20 true transitions land within 1 s, so edge timing matters
   more than catching extra stoppages.
 - Add fouls and offsides: a whistle shows up as everyone decelerating together, with the ball
