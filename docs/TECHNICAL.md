@@ -71,7 +71,7 @@ Python 3.11, numpy and pandas only, no randomness, weights rounded to 4 decimals
 
 ## Limitations and next steps
 
-- Only 4 of 20 public changes fall within 1 s; whether the truth flips at first controlled touch is unconfirmed (`--no-localize` keeps the earlier placement).
+- Only 4 of 20 public changes fall within 1 s; whether the truth flips at first controlled touch is unconfirmed (`--no-localize` keeps the earlier placement). Reading the public labels to understand that rule is the window's stated purpose; it is not used to tune anything.
 - Short throw-ins and fouls likely under-detected.
 - No ball inference through long gaps yet.
-- Video review of the stoppage sheet will fix consistent offsets per edge rule.
+- No hand labels or hand corrections on this match are used anywhere, including for validation (RULES.md, rule 1). Edge rules are checked only against label-free football norms and Smart Tagging, which is algorithmic.
