@@ -75,9 +75,12 @@ def proxy_truth(game, n):
         events = list(csv.DictReader(f))
     events.sort(key=lambda e: (int(e["Start Frame"]), ))
     labels = np.full(n, "X", dtype="<U1")
-    state, dead, start = None, False, None
+    state, dead, start, period = None, False, None, None
     for e in events:
         frame = max(0, min(n, int(e["Start Frame"]) - 1))
+        if e["Period"] != period:
+            # A new period: nothing carries over, and the gap since the last event stays X.
+            state, dead, start, period = None, False, None, e["Period"]
         if start is not None and state is not None:
             labels[start:frame] = "D" if dead else state
         if e["Type"] in RESTARTS:
