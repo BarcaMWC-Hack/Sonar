@@ -109,9 +109,9 @@ the tag-agreement gain on the full match. Switch placement moved this window sli
 way. With 12 possession changes that is noise-sized, but it is the one open question about what
 the labels mean: **during a loose ball, does the truth switch at the new team's first controlled
 touch (CHALLENGE.md's wording, and what `localize()` does), or earlier, at the interception or
-the old team's last touch?** A teammate can answer it by watching the public 5 minutes against
-`evaluation/gt/BAR-ATH_possession_gt_public.csv`. That file exists to show what the labels mean.
-Until then placement stays on, because it follows the written rule.
+the old team's last touch?** We do not use the public 5 minutes, any video, or any answer key to decide it: placement follows the
+written rule (CHALLENGE.md), the question stays open, and it is listed as a limitation. It can only be
+tested on other games (tools/external_eval.py), never by looking at this match.
 
 ## Ideas not yet tried
 
@@ -120,9 +120,8 @@ Until then placement stays on, because it follows the written rule.
 - Make the evidence asymmetric: an interception followed by a pass between the new team's
   players is stronger evidence than one touch. This is the most direct attack on the 43
   switches the new team barely controls.
-- A video check of 10-20 of our switches, split by how much follow-up control they had, would
-  say whether the weak ones are real turnovers or flicker.
+- Judge the weak switches (new team barely controls the ball) on other games with the yardstick in
+  tools/external_eval.py, not by watching this match: rules RULES.md, rule 1.
 - Check where a change lands: with no evidence while the ball is loose, the decoder puts the
   change at the new team's first controlled touch, which matches CHALLENGE.md's "gains
-  controlled possession". A video check of a dozen changes would confirm the ground truth does
-  the same.
+  controlled possession". Left as a stated assumption.
