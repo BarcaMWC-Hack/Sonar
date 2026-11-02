@@ -40,10 +40,12 @@ STOPS = {"BALL OUT", "FAULT RECEIVED"}
 
 
 def _read_tracking(path):
+    import pandas as pd
     with open(path, newline="") as f:
-        lines = f.read().splitlines()
-    names = lines[2].split(",")
-    arr = np.genfromtxt(lines[3:], delimiter=",")
+        for _ in range(2):
+            f.readline()
+        names = f.readline().rstrip("\r\n").split(",")
+    arr = pd.read_csv(path, skiprows=3, header=None, dtype=np.float64).to_numpy()
     return names, arr
 
 
