@@ -84,6 +84,32 @@ def build_labels(dead, codes, game=GAME, window=TEAM_WINDOW):
     return labels
 
 
+def fill_graded_abstentions(labels, game=GAME):
+    """Write out what the scorer does with X on graded frames.
+
+    The scorer carries the last label forward within each half (back-filling at the half's head)
+    before it matches possessions, and that last label can be D. Writing it explicitly leaves
+    spellF1 unchanged by construction and cannot lower macroF1, where X always counts as a miss.
+    """
+    out = labels.copy()
+    for _, first, last in half_video_blocks(game):
+        seg = out[first:last + 1]
+        known = np.flatnonzero(seg != "X")
+        if not len(known):
+            continue
+        idx = np.maximum.accumulate(np.where(seg != "X", np.arange(len(seg)), -1))
+        idx[idx < 0] = known[0]
+        out[first:last + 1] = seg[idx]
+    return out
+
+
+def check_release(labels):
+    """Assertions the submitted file must satisfy (format checks live in the official validator)."""
+    graded = deadball.graded_mask(len(labels))
+    assert not np.any(labels[graded] == "X"), "graded frames must not be X"
+    assert np.all(labels[deadball.known_dead_mask(len(labels))] == "D"), "pre-kickoff must be D"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--name", default="sonar")
@@ -115,6 +141,8 @@ def main():
     else:
         labels = build_labels(dead, possession_baseline.nearest_team(data))
 
+    labels = fill_graded_abstentions(labels)
+    check_release(labels)
     path = write_submission(os.path.join(args.out, args.name + ".csv"), labels)
     graded = deadball.graded_mask(len(labels))
     counts = {k: int(np.sum(labels[graded] == k)) for k in "HADX"}
