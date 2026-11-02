@@ -159,6 +159,9 @@ def public_check(dead, label="refined"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--grid", action="store_true")
+    parser.add_argument("--public-check", action="store_true",
+                        help="also read the public 5-minute ground truth, to confirm the pipeline "
+                             "is wired correctly (RULES.md: never to tune or choose settings)")
     args = parser.parse_args()
 
     data = atd.load()
@@ -189,7 +192,11 @@ if __name__ == "__main__":
     print("\nEdge refinement: {}".format(
         {k: (round(v, 2) if isinstance(v, float) else v) for k, v in details["refine"].items()}))
 
-    gt_n = int(np.sum(pm.label_codes(pm.read_label_csv(PUBLIC_GT)) == pm.D))
-    print("\nPublic 5 minutes (correctness check only; {} GT dead frames):".format(gt_n))
-    public_check(details["viterbi_dead"], "viterbi")
-    public_check(dead, "refined")
+    if args.public_check:
+        gt_n = int(np.sum(pm.label_codes(pm.read_label_csv(PUBLIC_GT)) == pm.D))
+        print("\nPublic 5 minutes (correctness check only; {} GT dead frames). RULES.md: do not "
+              "tune or choose settings with these numbers:".format(gt_n))
+        public_check(details["viterbi_dead"], "viterbi")
+        public_check(dead, "refined")
+    else:
+        print("\nPublic ground truth not read (pass --public-check for a wiring check only).")
