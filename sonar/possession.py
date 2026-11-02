@@ -62,6 +62,7 @@ TOUCH_LAG = 6
 TOUCH_DV = 5.0              # m/s change of ball velocity that counts as a touch
 TOUCH_RADIUS = 1.5          # m; the touching player must be this close
 CONTROL_THRESHOLD = 0.3     # |ball evidence| that counts as one team controlling the ball
+PERSIST_S = 2               # experimental persistence window (localize persist > 0)
 LOCALIZE_S = 3              # a switch moves at most this far, and never past a neighbour
 POSSESSION_CODES = {"build up", "progression", "creating chances", "attacking transition",
                     "ball in final third", "ball in the box", "long ball"}
@@ -138,7 +139,7 @@ def control_side(ball_ev, touch_frames, touch_sides, n):
     return side
 
 
-def localize(labels, dead, ball_ev, data, game=deadball.GAME):
+def localize(labels, dead, ball_ev, data, game=deadball.GAME, persist=0):
     """(labels with each H<->A switch moved to the new team's first touch, counts).
 
     The decoder decides which possessions there are; this decides where each one starts. Within
@@ -146,6 +147,10 @@ def localize(labels, dead, ball_ev, data, game=deadball.GAME):
     switch moves to the first frame the new team touches or controls the ball after the last
     frame the old team did. CHALLENGE.md: a change happens when the other team "gains
     controlled possession", and loose or contested play stays with the last team.
+
+    persist > 0 (experimental, off by default): a new-team frame only counts if the new team then
+    controls the ball on at least `persist` frames within PERSIST_S, with no old-team touch or
+    control in that time, so a deflection or block does not move the switch.
     """
     touch_frames, touch_sides = touches(data)
     side = control_side(ball_ev, touch_frames, touch_sides, len(labels))
@@ -174,6 +179,11 @@ def localize(labels, dead, ball_ev, data, game=deadball.GAME):
             new_frames = np.flatnonzero(side[lo:hi + 1] == -old_sign) + lo
             if len(old_frames):
                 new_frames = new_frames[new_frames > old_frames.max()]
+            if persist and len(new_frames):
+                span = PERSIST_S * FPS
+                new_frames = np.array([f for f in new_frames
+                                       if np.sum(side[f:f + span] == -old_sign) >= persist
+                                       and not np.any(side[f:f + span] == old_sign)], dtype=np.int64)
             if not len(new_frames):
                 counts["kept"] += 1
                 run_start = s
@@ -201,15 +211,22 @@ def tag_evidence(events, n):
     return np.clip(out, -TAG_WEIGHT, TAG_WEIGHT)
 
 
-def evidence(data, dead, shape_weight=None):
-    """(evidence for the decoder, details): ball control plus the team-shape term."""
+def evidence(data, dead, shape_weight=None, shape_only_with_ball=False):
+    """(evidence for the decoder, details): ball control plus the team-shape term.
+
+    shape_only_with_ball (experimental, off by default): use the team-shape term only on frames
+    where the ball is seen, so shape cannot place a switch inside a ball gap.
+    """
     shape_weight = SHAPE_WEIGHT if shape_weight is None else shape_weight
     ball = ball_evidence(data)
     alive = deadball.graded_mask(len(dead)) & ~dead
     x = team_shape.features(data)
     w = team_shape.fit(x, ball, alive)
     shape = team_shape.log_odds(x, w)
-    return ball + shape_weight * shape, {"ball": ball, "shape": shape, "shape_x": x,
+    term = shape_weight * shape
+    if shape_only_with_ball:
+        term = np.where(np.isfinite(data["ball"][:, 0]), term, 0.0)
+    return ball + term, {"ball": ball, "shape": shape, "shape_x": x,
                                          "shape_weights": w, "alive": alive}
 
 
