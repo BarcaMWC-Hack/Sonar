@@ -1,6 +1,7 @@
 """Team shape as possession evidence: the side with the ball spreads out and moves forward.
 
-Available on every frame, including the 19% of live frames where the ball is not tracked. It is
+Available on every frame, including the 18% of live frames where the ball is not tracked. On the delivered file the ball gives
+no evidence on 46% of live frames: in flight, untracked, or away from every player. It is
 a slow signal -- a team takes seconds to spread out after winning the ball -- so it is used to
 decide WHETHER possession changed, never WHEN: the switch point stays with the ball evidence.
 

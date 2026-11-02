@@ -32,7 +32,7 @@ Inputs (ATD, Smart Tagging) → dead ball → who has it → switch timing → f
 80 stoppages, 38.2% of graded time, median 19 s.
 
 1. Features: player speeds, moving/sprinting shares, players off the pitch, kick-off line-up, ball over a line, ball speed, long ball gaps, restart spots.
-2. Logistic model on weak labels: dead = 8 s before each tagged set piece plus frames 110,808-113,741; alive = open-play phases clear of set pieces. Cross-half AUC 0.82 / 0.87.
+2. Logistic model on weak labels: dead = 8 s before each tagged set piece plus frames 110,808-113,741 (FAQ.md states these are graded and all D); alive = open-play phases clear of set pieces. Cross-half AUC 0.82 / 0.87.
 3. Two-state Viterbi, one switch = one second of evidence.
 4. Edges from unsmoothed signals: start at line crossing, deceleration or ball vanishing; end at the earliest ball event around the players' acceleration.
 
@@ -44,7 +44,7 @@ Inputs (ATD, Smart Tagging) → dead ball → who has it → switch timing → f
 2. Team shape: width alone AUC 0.86; shape model 0.85-0.87 across halves; weight 0.05 per frame.
 3. Viterbi with switch cost 3 decides whether possession changed.
 4. Each switch moves to the new team's first touch or control (touch = >5 m/s ball velocity jump within 1.5 m of a player; 15.8 per live minute).
-5. Smart Tagging names the team only for live stretches with no tracking evidence.
+5. Smart Tagging names the team only for a live stretch with no ball or team-shape evidence. Team shape is available on every frame, so on the delivered file this reaches at most one of the 81 live stretches (8 stretches have no ball evidence and take their team from shape).
 
 ## Validation
 
@@ -61,11 +61,27 @@ Inputs (ATD, Smart Tagging) → dead ball → who has it → switch timing → f
 | Dead-ball F1 | 0.323 | 0.653 |
 | Possessions (truth 17) | 26 | 19 |
 
+Other games (Metrica sample games 1 and 2, with a simulated truth): switch cost 2.0 scores highest on both, but picking the best setting on one game and testing it on the other is mixed, so the default stays at 3.0 (see `sonar/POSSESSION.md`).
+
+## Data used for training and validation
+
+No hand labels were made on the provided match, and none on any other game. Every dataset that touches the model:
+
+| Data | Game | Labelled by | Used for |
+| --- | --- | --- | --- |
+| Automatic tracking (ATD) | provided | the organisers' tracker (RULES.md: automatic tracking is given) | all features |
+| Smart Tagging (phases, set pieces, team tags) | provided | inferred by an algorithm ("the Smart Tagging is inferred too", CHALLENGE.md) | dead-ball weak labels (training); the team fallback (at most one stretch) |
+| All-dead interval 110,808-113,741 | provided | stated by the organisers in FAQ.md, not by us | dead-ball weak labels (training) |
+| Team-shape fit | provided | computed from the tracking itself (frames where ball control is clear), no external labels | team shape (fitted on the same match) |
+| Public 5-minute ground truth | provided | the organisers | the scorer's correctness check only; never used to choose a setting |
+| Metrica open sample games 1 and 2: tracking and events | other games | Metrica's published sample data; we did not produce these labels | comparing possession settings in `tools/external_full.py` (PR #9); not training data for the submission |
+
 ## Reproducibility and data handling
 
 ```
 python -m pip install -r requirements-sonar.txt
 python -m sonar.make_submission
+python tools/check_submission.py
 ```
 
 Python 3.11.9 with numpy 2.4.6 and pandas 3.0.6 only (pinned in `requirements-sonar.txt`), no randomness, weights rounded to 4 decimals. No match data committed or given to any hosted model; scripts print only scores, counts and shares.
