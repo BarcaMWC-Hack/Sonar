@@ -80,7 +80,7 @@ def load(game=GAME, data_dir=None, rebuild=False):
     length, width = GAMES[game]["pitch"]
     # Keyed by the file CONTENT (SHA-256), not its size and time, so a different input can never
     # silently reuse an old cache.
-    stamp = np.concatenate(([CACHE_VERSION], _content_hash(raw_path))).astype(np.int64)
+    stamp = np.concatenate(([CACHE_VERSION, n_frames], _content_hash(raw_path))).astype(np.int64)
 
     path = cache_path(game, data_dir)
     if not rebuild and os.path.isfile(path):

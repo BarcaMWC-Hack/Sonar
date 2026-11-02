@@ -102,7 +102,7 @@ def weak_labels(n, events, game=GAME):
     play = interval_mask(n, [(e["start_frame"] + trim, e["end_frame"] - trim)
                              for e in events if code_of(e) in OPEN_PLAY_CODES])
     dead = pre & graded
-    alive = play & ~guard & graded & ~dead & ~known_dead_mask(n, game)
+    alive = play & ~guard & graded & ~dead
     return dead, alive
 
 

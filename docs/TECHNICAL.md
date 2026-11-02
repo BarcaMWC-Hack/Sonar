@@ -74,7 +74,7 @@ Python 3.11.9 with numpy 2.4.6 and pandas 3.0.6 only (pinned in `requirements-so
 
 - **Labelled data used to train anything in the submission: none from a person.** The dead-ball model learns from Metrica's Smart Tagging of the provided match, which is automatic annotation supplied with the data, not human labels. No hand label, correction or annotation of the provided match is used, for training, validation or anything else (RULES.md).
 - **Public 5 minutes:** used only to check that the pipeline is wired correctly, never to train, tune or choose settings. The tools that read it refuse to run without an explicit `--public-check` flag.
-- **Other games, for evaluation only:** Metrica's open sample games 1-3 and Sportec's open Bundesliga matches were used to compare methods and to test parameter settings (`tools/external_eval.py` and related). Their labels are proxies derived from event data; nothing from them is in the submitted model. Learned sequence models were tried on them and rejected because they did not generalise across data providers.
+- **Other games (3 Metrica open sample games, 7 Sportec open Bundesliga matches):** used to compare methods and test parameter settings, and to train experimental learned sequence models that were rejected because they did not generalise across data providers. Their labels are possession proxies derived automatically from each provider's event data (no annotator of ours, none hand-made). None of it, and no model trained on it, is in the submitted pipeline. The evaluation scripts are `tools/external_*.py`, added by the yardstick change.
 - **Pretrained models:** none. **External human-produced data about the provided match:** none.
 
 ## Limitations and next steps
