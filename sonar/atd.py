@@ -18,6 +18,7 @@ raw file's size or modification time changes, so it can never go stale silently.
 """
 
 import io
+import hashlib
 import os
 import sys
 
@@ -63,13 +64,23 @@ def _parse(raw_path, n_frames):
     return flat
 
 
+def _content_hash(path):
+    """SHA-256 of a file as four int64 values."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 24), b""):
+            digest.update(chunk)
+    return np.frombuffer(digest.digest(), dtype=np.int64)
+
+
 def load(game=GAME, data_dir=None, rebuild=False):
     """dict with ball, players, team and pitch (length, width) in metres."""
     meta_path, raw_path = require(["atd_meta", "atd_raw"], game, data_dir)
     n_frames = source_frames("tactical", game)
     length, width = GAMES[game]["pitch"]
-    stat = os.stat(raw_path)
-    stamp = np.array([CACHE_VERSION, stat.st_size, int(stat.st_mtime)], dtype=np.int64)
+    # Keyed by the file CONTENT (SHA-256), not its size and time, so a different input can never
+    # silently reuse an old cache.
+    stamp = np.concatenate(([CACHE_VERSION], _content_hash(raw_path))).astype(np.int64)
 
     path = cache_path(game, data_dir)
     if not rebuild and os.path.isfile(path):
