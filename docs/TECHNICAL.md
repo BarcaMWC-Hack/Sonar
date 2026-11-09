@@ -8,7 +8,7 @@ Sonar labels every frame of Barcelona vs Athletic Club with a three-stage pipeli
 
 - **Full match:** 80 stoppages covering 38% of graded time, and 277 possessions of mean 14.2 s, both close to a real match.
 - **Public 5 minutes (correctness check only):** dead-ball F1 0.65 against 0.32 for the published baseline, macroF1 0.77 against 0.62, spellF1 0.40 against 0.33. All spellF1 intervals overlap on 17 possessions.
-- **Reproducibility:** one command rebuilds the submission byte for byte, including from a cold cache.
+- **Reproducibility:** `python tools/repro_check.py` builds a clean environment from `requirements-sonar.txt`, regenerates the submission twice from a cold cache and compares the hashes; the data cache is keyed by file content.
 
 ## Problem and data
 
@@ -32,7 +32,7 @@ Inputs (ATD, Smart Tagging) → dead ball → who has it → switch timing → f
 80 stoppages, 38.2% of graded time, median 19 s.
 
 1. Features: player speeds, moving/sprinting shares, players off the pitch, kick-off line-up, ball over a line, ball speed, long ball gaps, restart spots.
-2. Logistic model on weak labels: dead = 8 s before each tagged set piece plus frames 110,808-113,741 (FAQ.md states these are graded and all D); alive = open-play phases clear of set pieces. Cross-half AUC 0.82 / 0.87.
+2. Logistic model on weak labels from Smart Tagging only: dead = 8 s before each tagged set piece; alive = open-play phases clear of set pieces. The documented second-half pre-kickoff frames (FAQ.md) decide those frames when labelling but are not training labels. Cross-half AUC 0.82 / 0.87.
 3. Two-state Viterbi, one switch = one second of evidence.
 4. Edges from unsmoothed signals: start at line crossing, deceleration or ball vanishing; end at the earliest ball event around the players' acceleration.
 
@@ -71,7 +71,7 @@ No hand labels were made on the provided match, and none on any other game. Ever
 | --- | --- | --- | --- |
 | Automatic tracking (ATD) | provided | the organisers' tracker (RULES.md: automatic tracking is given) | all features |
 | Smart Tagging (phases, set pieces, team tags) | provided | inferred by an algorithm ("the Smart Tagging is inferred too", CHALLENGE.md) | dead-ball weak labels (training); the team fallback (at most one stretch) |
-| All-dead interval 110,808-113,741 | provided | stated by the organisers in FAQ.md, not by us | dead-ball weak labels (training) |
+| All-dead interval 110,808-113,741 | provided | stated by the organisers in FAQ.md, not by us | decides those frames when labelling; not used for training |
 | Team-shape fit | provided | computed from the tracking itself (frames where ball control is clear), no external labels | team shape (fitted on the same match) |
 | Public 5-minute ground truth | provided | the organisers | the scorer's correctness check only; never used to choose a setting |
 | Metrica open sample games 1 and 2: tracking and events | other games | Metrica's published sample data; we did not produce these labels | comparing possession settings in `tools/external_full.py` (PR #9); not training data for the submission |
@@ -85,6 +85,13 @@ python tools/check_submission.py
 ```
 
 Python 3.11.9 with numpy 2.4.6 and pandas 3.0.6 only (pinned in `requirements-sonar.txt`), no randomness, weights rounded to 4 decimals. No match data committed or given to any hosted model; scripts print only scores, counts and shares.
+
+## Training data and external data
+
+- **Labelled data used to train anything in the submission: none from a person.** The dead-ball model learns from Metrica's Smart Tagging of the provided match, which is automatic annotation supplied with the data, not human labels. No hand label, correction or annotation of the provided match is used, for training, validation or anything else (RULES.md).
+- **Public 5 minutes:** used only to check that the pipeline is wired correctly, never to train, tune or choose settings. The tools that read it refuse to run without an explicit `--public-check` flag.
+- **Other games (3 Metrica open sample games, 7 Sportec open Bundesliga matches):** used to compare methods and test parameter settings, and to train experimental learned sequence models that were rejected because they did not generalise across data providers. Their labels are possession proxies derived automatically from each provider's event data (no annotator of ours, none hand-made). None of it, and no model trained on it, is in the submitted pipeline. The evaluation scripts are `tools/external_*.py`, added by the yardstick change.
+- **Pretrained models:** none. **External human-produced data about the provided match:** none.
 
 ## Limitations and next steps
 

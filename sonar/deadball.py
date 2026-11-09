@@ -6,8 +6,9 @@ Three steps, all inspectable:
      speed, where a still ball sits.
   2. A logistic model turns them into a per-frame log-likelihood ratio, dead vs alive. It is
      trained on WEAK labels taken from Metrica's Smart Tagging, never on any ground truth:
-        dead  = the 8 s before each SET PIECES interval starts, plus the 2nd-half pre-kickoff
-                (110808..113741, which FAQ.md states is all D)
+        dead  = the 8 s before each SET PIECES interval starts (Smart Tagging only; the 2nd-half
+                pre-kickoff 110808..113741 that FAQ.md states is all D is applied when deciding,
+                not used to train)
         alive = the inside of open-play phases (Progression, Build Up, ...), trimmed by 1 s and
                 kept 10 s clear of any set piece
      Classes are reweighted to equal mass, so the model's logit is a likelihood ratio and the
@@ -86,7 +87,11 @@ def code_of(event):
 
 
 def weak_labels(n, events, game=GAME):
-    """(dead, alive) boolean masks from Smart Tagging and the documented pre-kickoff."""
+    """(dead, alive) boolean masks from Smart Tagging only.
+
+    The documented 2nd-half pre-kickoff frames (FAQ.md) are applied when deciding (known_dead_mask),
+    but are NOT training labels: the model learns from Smart Tagging alone.
+    """
     graded = graded_mask(n, game)
     setpieces = [e for e in events if code_of(e) == "set pieces"]
     pre = interval_mask(n, [(e["start_frame"] - PRE_SETPIECE_S * FPS, e["start_frame"])
@@ -96,7 +101,7 @@ def weak_labels(n, events, game=GAME):
     trim = OPEN_PLAY_TRIM_S * FPS
     play = interval_mask(n, [(e["start_frame"] + trim, e["end_frame"] - trim)
                              for e in events if code_of(e) in OPEN_PLAY_CODES])
-    dead = (pre & graded) | known_dead_mask(n, game)
+    dead = pre & graded
     alive = play & ~guard & graded & ~dead
     return dead, alive
 
