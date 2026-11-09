@@ -86,6 +86,7 @@ def training_mask(ball_ev, alive, x):
 def fit(x, ball_ev, alive):
     """[bias, *weights] of log-odds Barca over Athletic, from the frames the ball is clear on."""
     train = training_mask(ball_ev, alive, x)
+    deadball.require_graded(train)
     return deadball.fit_logistic(x[train], (ball_ev[train] > 0).astype(float), l2=L2)
 
 

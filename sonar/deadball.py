@@ -70,6 +70,12 @@ def graded_mask(n, game=GAME):
     return mask
 
 
+def require_graded(mask, game=GAME):
+    """Stop if a training mask contains an ungraded frame."""
+    if np.any(mask & ~graded_mask(len(mask), game)):
+        raise ValueError("training frames must all be graded")
+
+
 def interval_mask(n, intervals):
     mask = np.zeros(n, dtype=bool)
     for start, stop in intervals:
@@ -276,9 +282,10 @@ def crossing_starts(ball_oob):
     return starts[(stops - starts) >= CROSS_MIN_FRAMES]
 
 
-def long_gaps(known):
+def long_gaps(known, present=None):
     """(starts, stops) of missing-ball runs of at least LONG_GAP frames; stop = first seen frame."""
-    edges = np.diff(np.concatenate(([0], (~known).astype(np.int8), [0])))
+    missing = ~known if present is None else ~known & present
+    edges = np.diff(np.concatenate(([0], missing.astype(np.int8), [0])))
     starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
     keep = (stops - starts) >= LONG_GAP
     return starts[keep], stops[keep]
@@ -313,7 +320,7 @@ def refine(dead, data, features, game=GAME):
     """(refined dead mask, counts of which rule moved each edge, final stoppages with rules)."""
     ball_xy = data["ball"][:, :2].astype(np.float64)
     crossings = crossing_starts(features["ball_oob"])
-    gaps, gap_ends = long_gaps(features["ball_known"])
+    gaps, gap_ends = long_gaps(features["ball_known"], features["frame_present"])
     end_events = {"kick": kick_frames(ball_xy), "strike": strike_onsets(ball_xy),
                   "reacquire": gap_ends}
     contrast = motion_contrast(features["mean_speed_raw"])
@@ -397,6 +404,7 @@ def detect(data, events, game=GAME, refine_edges=True, **decode_kwargs):
     n = len(x)
     weak_dead, weak_alive = weak_labels(n, events, game)
     train = weak_dead | weak_alive
+    require_graded(train, game)
     w = fit_logistic(x[train], weak_dead[train].astype(float))
     llr = log_likelihood_ratio(x, w)
     viterbi_dead = decode(llr, n, game, **decode_kwargs)

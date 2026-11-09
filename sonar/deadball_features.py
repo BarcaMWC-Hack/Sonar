@@ -119,6 +119,8 @@ def compute(data):
     players = data["players"].astype(np.float64)
     ball_xy = ball[:, :2]
     known = ~np.isnan(ball_xy[:, 0])
+    # A frame with no players at all is outside graded play, so a ball gap stops at its edge.
+    present = ~np.isnan(players[:, :, 0]).all(axis=1)
 
     speeds = players[:, :, 2]
     visible = ~np.isnan(players[:, :, 0])
@@ -148,7 +150,8 @@ def compute(data):
         "ball_oob": ball_outside(ball_xy, data["pitch"]),
         "ball_speed": ball_speed(ball_xy),
         "ball_known_share": rolling_mean(known.astype(np.float64), KNOWN_HALF),
-        "missing_run": run_lengths(~known),
+        "missing_run": run_lengths(~known & present),
+        "frame_present": present,
         "n_visible": n_visible,
         "mean_speed_raw": mean_speed,
         "mean_speed": rolling_mean(mean_speed, SMOOTH_HALF),
