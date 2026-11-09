@@ -50,7 +50,22 @@ def offsets(gt_codes, pred_codes):
     return out
 
 
+PUBLIC_CHECK_MESSAGE = (
+    "This tool reads the public 5-minute ground truth. RULES.md: those minutes are for checking "
+    "that the pipeline is wired correctly, never for training, tuning or choosing between "
+    "settings. Run it only to confirm the pipeline works, with --public-check, and do not act "
+    "on its numbers.")
+
+
+def require_public_check_flag():
+    import sys
+    if "--public-check" not in sys.argv:
+        sys.exit(PUBLIC_CHECK_MESSAGE)
+    sys.argv.remove("--public-check")
+
+
 if __name__ == "__main__":
+    require_public_check_flag()
     gt = pm.label_codes(pm.read_label_csv(PUBLIC_GT))
     header = ["none"] + ["{:+g}..{:+g}s".format(a, b) for a, b in BUCKETS]
     for path in sys.argv[1:] or DEFAULT:

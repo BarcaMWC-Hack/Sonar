@@ -3,6 +3,7 @@
     python -m sonar.make_submission                  # evaluation/results/sonar.csv
     python -m sonar.make_submission --name try2      # evaluation/results/try2.csv
     python -m sonar.make_submission --team nearest   # baseline team call, for comparison
+    python -m sonar.make_submission --no-localize    # switches where the decoder puts them
 
 How a frame gets its label:
   - outside the two graded halves: X (never scored)
@@ -77,14 +78,19 @@ def main():
     parser.add_argument("--team", choices=("control", "nearest"), default="control",
                         help="control: sonar/possession.py (default); nearest: the baseline's "
                              "nearest player with a +/-2 s majority vote")
+    parser.add_argument("--no-localize", action="store_true",
+                        help="keep possession switches where the decoder puts them instead of "
+                             "moving them to the new team's first touch (control only)")
     args = parser.parse_args()
 
     data = atd.load()
     events = load_smart_tagging.load()
     dead, _ = deadball.detect(data, events)
     if args.team == "control":
-        labels = possession.labels(dead, possession.ball_evidence(data),
-                                   possession.tag_evidence(events, len(dead)))
+        evidence, details = possession.evidence(data, dead)
+        labels = possession.labels(dead, evidence, possession.tag_evidence(events, len(dead)))
+        if not args.no_localize:
+            labels, _ = possession.localize(labels, dead, details["ball"], data)
     else:
         labels = build_labels(dead, possession_baseline.nearest_team(data))
 
