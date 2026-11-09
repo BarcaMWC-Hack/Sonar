@@ -10,16 +10,16 @@ Sonar assigns every tactical-video frame to home possession, away possession, de
 
 ## Inputs and training disclosure
 
-- **Organizer-supplied match assets used by the submission:** tactical tracking positions and metadata for one complete match, and its automatically generated Smart Tagging XML. The stoppage and team-shape fits use only automatic evidence. The team-shape fit uses tracking-derived control as weak supervision. Human-labeled examples used for model fitting or parameter selection from this match: **zero**.
+- **Organizer-supplied match assets used by the submission:** tactical tracking positions and metadata for one complete match, and its automatically generated Smart Tagging XML. Only graded frames are used: ungraded frames are blanked when the tracking is loaded, so no training frame or smoothing window can reach them. The stoppage and team-shape fits use only automatic evidence. The team-shape fit uses tracking-derived control as weak supervision. Human-labeled examples used for model fitting or parameter selection from this match: **zero**.
 - **Organizer public ground truth:** five minutes, used to check the fixed pipeline. It did not select a model, threshold or setting. The team did not use private ground truth or human-produced data about the fixture.
 - **Other matches:** three anonymized Metrica Sports open sample games and seven Sportec/DFL IDSSE Bundesliga matches were used to explore and benchmark candidate methods. Metrica's event annotations and Sportec/DFL's frame-level ball state and ownership supplied the references. The inputs covered the available frames in those matches. Simulated tracking gaps and Smart Tagging–like inputs were used in the external tests. The submitted generator uses only the organizer-supplied match assets listed above.
 - **Assets explored:** the broadcast stream was aligned in a feasibility study. The measured recovery of missing-ball frames was small and the replay cue missed its gate. Broadcast footage and tracking, homography, and pretrained models are outside the submitted pipeline.
 
 ## Checks and limitations
 
-The fixed file has 199,319 data rows, with 82 stoppages covering 41% of graded time and 286 possessions of mean 13.1 s. On the public pipeline check it scored **0.4108 spellF1** and **0.7545 macroF1**, with **20 predicted possessions** against **17 reference possessions**. The corresponding public spellF1 values are **0.3256** for smooth50 and **0.4242** for smooth125. The full-match score is determined by the organizers using private labels. Fitting each model on one half and scoring the other, on weak labels rather than truth, gives AUC 0.81 and 0.89 for stoppages and 0.85 and 0.86 for team shape (`tools/kpm_report.py`).
+The fixed file has 199,319 data rows, with 82 stoppages covering 41% of graded time and 286 possessions of mean 13.1 s. On the public pipeline check it scored **0.4108 spellF1** and **0.7545 macroF1**, with **20 predicted possessions** against **17 reference possessions**. The corresponding public spellF1 values are **0.3256** for smooth50 and **0.4242** for smooth125. The full-match score is determined by the organizers using private labels. On five time-block folds of graded frames with a 10 s gap (`sonar/splits.py`), on weak labels rather than truth, mean held-out AUC is 0.85 for stoppages and 0.86 for team shape (`tools/kpm_report.py`).
 
-The ball is missing from roughly 41% of graded frames. Short in-play fouls and throw-ins are difficult to distinguish from a brief slowdown. A ball-velocity change near a player can indicate a deflection, a clearance or control. These ambiguities can shift the boundaries of otherwise plausible possessions. On the public window the detector finds half of the dead-ball frames (recall 0.50, precision 0.86). One stoppage-model stability check and one team-shape calibration check still miss their targets. The labeled public window is too small to estimate the ranking reliably.
+The ball is missing from roughly 41% of graded frames. Short in-play fouls and throw-ins are difficult to distinguish from a brief slowdown. A ball-velocity change near a player can indicate a deflection, a clearance or control. These ambiguities can shift the boundaries of otherwise plausible possessions. On the public window the detector finds half of the dead-ball frames (recall 0.50, precision 0.86). The worst-fold KS gap misses its limit for both models, and the stoppage model's pooled calibration test fails. The labeled public window is too small to estimate the ranking reliably.
 
 ## Reproduce the submission
 
@@ -30,7 +30,7 @@ python -m pip install -r requirements-sonar.txt
 python -m sonar.make_submission --name Sonar --out data/release
 python evaluation/validate_submission.py data/release/Sonar.csv
 python tools/check_submission.py data/release/Sonar.csv
-python tools/repro_check.py --existing-env --expect 12e0d605ef4e8a72ff340f390caec975
+python tools/repro_check.py --existing-env --expect f3b7993ffb94d6fa5c6fae8ee17e4fd6
 ```
 
-Expected CSV MD5 is `12e0d605ef4e8a72ff340f390caec975`. The reproduction check builds twice from independent cold caches, checks both files and compares them with the upload hash. Omit --existing-env to have the script build its own environment. The CSV is written with LF line ends on every operating system.
+Expected CSV MD5 is `f3b7993ffb94d6fa5c6fae8ee17e4fd6`. The reproduction check builds twice from independent cold caches, checks both files and compares them with the upload hash. Omit --existing-env to have the script build its own environment. The CSV is written with LF line ends on every operating system.
