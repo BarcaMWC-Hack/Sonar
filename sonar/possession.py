@@ -18,7 +18,7 @@ So:
   3. A two-state Viterbi per live stretch with SWITCH_COST: a change of possession has to be
      paid for with that much accumulated evidence by the new team.
   4. Smart Tagging phases whose Team tag names the side in possession (Build Up, Progression,
-     ...: 64-87% agreement with the controlled call on this file) name the team for a live
+     ...: 63-87% agreement with the controlled call on this file) name the team for a live
      stretch the tracking says nothing about. They never place a change: their edges are seconds
      off. The "Defending in ..." codes are mirror copies naming the other side and are not used.
   5. localize() then moves each switch to the new team's first touch or control after the old
