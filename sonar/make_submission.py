@@ -30,11 +30,21 @@ sys.path.insert(0, ROOT)
 from games import GAME, half_video_blocks  # noqa: E402
 from sonar import atd, deadball, possession, possession_baseline  # noqa: E402
 from starter import load_smart_tagging  # noqa: E402
-from starter.baseline import write_submission  # noqa: E402
 
 # Params
 RESULTS_DIR = os.path.join(ROOT, "evaluation", "results")
 TEAM_WINDOW = 50        # frames either side for the team majority vote, as baseline_smooth50
+
+
+def write_submission(path, labels):
+    """A frame,label CSV with \\n line ends on every OS, so any rebuild gives the same bytes."""
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    with open(path, "w", newline="\n") as handle:
+        handle.write("frame,label\n")
+        handle.writelines("{},{}\n".format(frame, label) for frame, label in enumerate(labels))
+    return path
 
 
 def runs(mask):
