@@ -2,15 +2,18 @@
 
     python -m sonar.make_submission                  # evaluation/results/sonar.csv
     python -m sonar.make_submission --name try2      # evaluation/results/try2.csv
+    python -m sonar.make_submission --team nearest   # baseline team call, for comparison
+    python -m sonar.make_submission --no-localize    # switches where the decoder puts them
 
 How a frame gets its label:
   - outside the two graded halves: X (never scored)
   - the dead-ball detector says dead: D
-  - otherwise the frame is inside an alive stretch, and gets that stretch's team call: a centred
-    majority vote of the per-frame team codes, kept inside the stretch so a vote never reaches
-    across a stoppage. Frames with no vote take the nearest voted frame in the same stretch, so a
-    possession is never filled with the label from before a stoppage. A stretch with no team
-    evidence at all is X, which the scorer carries forward.
+  - otherwise the frame is inside an alive stretch, and gets the team call. By default that is
+    sonar/possession.py (control-weighted evidence, switching cost). With --team nearest it is a
+    centred majority vote of the nearest-player codes, kept inside the stretch so a vote never
+    reaches across a stoppage; frames with no vote take the nearest voted frame in the same
+    stretch, so a possession is never filled with the label from before a stoppage.
+  - A stretch with no team evidence at all is X, which the scorer carries forward.
 
 Prints summary counts only.
 """
@@ -25,7 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 from games import GAME, half_video_blocks  # noqa: E402
-from sonar import atd, deadball, possession_baseline  # noqa: E402
+from sonar import atd, deadball, possession, possession_baseline  # noqa: E402
 from starter import load_smart_tagging  # noqa: E402
 from starter.baseline import write_submission  # noqa: E402
 
@@ -72,13 +75,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--name", default="sonar")
     parser.add_argument("--out", default=RESULTS_DIR)
+    parser.add_argument("--team", choices=("control", "nearest"), default="control",
+                        help="control: sonar/possession.py (default); nearest: the baseline's "
+                             "nearest player with a +/-2 s majority vote")
+    parser.add_argument("--no-localize", action="store_true",
+                        help="keep possession switches where the decoder puts them instead of "
+                             "moving them to the new team's first touch (control only)")
     args = parser.parse_args()
 
     data = atd.load()
     events = load_smart_tagging.load()
     dead, _ = deadball.detect(data, events)
-    codes = possession_baseline.nearest_team(data)
-    labels = build_labels(dead, codes)
+    if args.team == "control":
+        evidence, details = possession.evidence(data, dead)
+        labels = possession.labels(dead, evidence, possession.tag_evidence(events, len(dead)))
+        if not args.no_localize:
+            labels, _ = possession.localize(labels, dead, details["ball"], data)
+    else:
+        labels = build_labels(dead, possession_baseline.nearest_team(data))
 
     path = write_submission(os.path.join(args.out, args.name + ".csv"), labels)
     graded = deadball.graded_mask(len(labels))
