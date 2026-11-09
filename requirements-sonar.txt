@@ -1,3 +1,5 @@
-# Exact versions Sonar's submission was built and checked with (Python 3.11.9).
+# Frozen release with Python 3.11.9
 numpy==2.4.6
-pandas==3.0.6
+pandas==3.1.0
+python-dateutil==4.0.0
+tzdata==2026.6; sys_platform == "win32"
