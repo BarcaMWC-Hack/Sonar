@@ -6,8 +6,9 @@ Three steps, all inspectable:
      speed, where a still ball sits.
   2. A logistic model turns them into a per-frame log-likelihood ratio, dead vs alive. It is
      trained on WEAK labels taken from Metrica's Smart Tagging, never on any ground truth:
-        dead  = the 8 s before each SET PIECES interval starts, plus the 2nd-half pre-kickoff
-                (110808..113741, which FAQ.md states is all D)
+        dead  = the 8 s before each SET PIECES interval starts (Smart Tagging only; the 2nd-half
+                pre-kickoff 110808..113741 that FAQ.md states is all D is applied when deciding,
+                not used to train)
         alive = the inside of open-play phases (Progression, Build Up, ...), trimmed by 1 s and
                 kept 10 s clear of any set piece
      Classes are reweighted to equal mass, so the model's logit is a likelihood ratio and the
@@ -86,7 +87,11 @@ def code_of(event):
 
 
 def weak_labels(n, events, game=GAME):
-    """(dead, alive) boolean masks from Smart Tagging and the documented pre-kickoff."""
+    """(dead, alive) boolean masks from Smart Tagging only.
+
+    The documented 2nd-half pre-kickoff frames (FAQ.md) are applied when deciding (known_dead_mask),
+    but are NOT training labels: the model learns from Smart Tagging alone.
+    """
     graded = graded_mask(n, game)
     setpieces = [e for e in events if code_of(e) == "set pieces"]
     pre = interval_mask(n, [(e["start_frame"] - PRE_SETPIECE_S * FPS, e["start_frame"])
@@ -96,7 +101,7 @@ def weak_labels(n, events, game=GAME):
     trim = OPEN_PLAY_TRIM_S * FPS
     play = interval_mask(n, [(e["start_frame"] + trim, e["end_frame"] - trim)
                              for e in events if code_of(e) in OPEN_PLAY_CODES])
-    dead = (pre & graded) | known_dead_mask(n, game)
+    dead = pre & graded
     alive = play & ~guard & graded & ~dead
     return dead, alive
 
@@ -202,20 +207,30 @@ def decode(llr, n, game=GAME, temperature=TEMPERATURE, switch_cost=SWITCH_COST,
 
 # -- boundary refinement --------------------------------------------------------------------------
 #
-# The Viterbi path is built from features smoothed over seconds, so its edges are only as sharp as
-# that smoothing. The ground truth's edges are physical instants: the ball crossing a line, and
-# the restart kick. EVALUATION.md puts the cost of being 1 s late everywhere at ~35% of spellF1,
-# so each edge is snapped to the instant it most plausibly marks, when one is found nearby:
+# The Viterbi path is built from features smoothed over seconds -- up to a 10 s window -- so its
+# edges can sit seconds away from the instants the ground truth's edges mark: the ball crossing
+# a line, and the restart kick. EVALUATION.md puts the cost of being 1 s late everywhere at ~35%
+# of spellF1, so each edge is re-placed from unsmoothed signals near it:
 #
-#   start: the first frame the ball is seen over a line, else the first frame of a long ball gap
-#   end:   the restart -- the ball going from held or still to struck; else, where a long ball
-#          gap ends nearby, the first strike within REACQUIRE_KICK_S of the ball reappearing,
-#          or the reappearance itself. Counted on the delivered file (tools/deadball_report.py):
-#          a long gap ends within -3..+1 s of 35 of the 80 decoded restarts, so the tracker
-#          tends to pick the ball up again at the restart.
+#   start: the first frame the ball is seen over a line. Otherwise the moment the players
+#          decelerate -- the strongest drop in mean player speed, 2 s after vs 2 s before -- or,
+#          if the ball vanishes into a long gap just before that, the frame it vanishes.
+#   end:   found from the moment the players accelerate (the strongest rise, same measure). That
+#          peak trails the restart, because players speed up over a second or two, so the
+#          restart is the EARLIEST ball event from CHANGE_LEAD_S before the peak to
+#          CHANGE_LAG_S after it: a held or still ball struck, or the ball reappearing from a
+#          long gap; failing those, any ball becoming fast. Every restart -- throw-in, goal kick,
+#          corner, free kick, kick-off -- is the first strike of a held, placed or unseen ball;
+#          later strikes in the window are open play. (A first version took the latest event
+#          before the peak; that picks the first pass after the restart, and was dropped.)
 
 START_BEFORE_S, START_AFTER_S = 6, 2
 END_BEFORE_S, END_AFTER_S = 6, 3
+CHANGE_WINDOW = 2 * FPS     # frames either side of a candidate edge for the speed contrast
+CHANGE_LEAD_S = 3           # restart ball events up to this long before the players' peak
+CHANGE_LAG_S = 1            # ...or this long after it (attackers start runs before a corner)
+GAP_LAG_S = 0.5             # a ball vanishing up to this long after the deceleration still counts
+MIN_STOPPAGE = FPS          # a refined stoppage keeps at least one second
 CROSS_MARGIN = 0.2          # m; the ball's centre this far over a line means it is wholly over
 CROSS_MIN_FRAMES = 3        # ...for at least this many frames, so one noisy frame is not a crossing
 LONG_GAP = 5 * FPS          # the tracker fills shorter gaps itself (see deadball_features)
@@ -223,7 +238,24 @@ KICK_SPEED = 5.0            # m/s, ball speed just after a restart strike or thr
 HELD_SPEED = 2.5            # m/s, ball speed while placed or carried before the restart
 HELD_FRAMES = 25            # look back this far for the held/still ball
 HELD_MIN_KNOWN = 5
-REACQUIRE_KICK_S = 2
+# Restart candidates, most specific group first; within a group the earliest frame wins.
+END_EVENT_GROUPS = (("kick", "reacquire"), ("strike",))
+
+
+def motion_contrast(raw_speed, half=CHANGE_WINDOW):
+    """Mean player speed over the next `half` frames minus the previous `half`, NaN-aware.
+
+    Peaks where the players accelerate (a restart) and dips where they decelerate (a stoppage).
+    """
+    valid = ~np.isnan(raw_speed)
+    total = np.concatenate(([0.0], np.cumsum(np.where(valid, raw_speed, 0.0))))
+    count = np.concatenate(([0], np.cumsum(valid)))
+    n = len(raw_speed)
+    t = np.arange(n)
+    high, low = np.minimum(n, t + half), np.maximum(0, t - half)
+    after = (total[high] - total[t]) / np.maximum(count[high] - count[t], 1)
+    before = (total[t] - total[low]) / np.maximum(count[t] - count[low], 1)
+    return after - before
 
 
 def instant_ball_speed(ball_xy, half=2):
@@ -281,44 +313,62 @@ def refine(dead, data, features, game=GAME):
     ball_xy = data["ball"][:, :2].astype(np.float64)
     crossings = crossing_starts(features["ball_oob"])
     gaps, gap_ends = long_gaps(features["ball_known"])
-    kicks = kick_frames(ball_xy)
-    onsets = strike_onsets(ball_xy)
+    end_events = {"kick": kick_frames(ball_xy), "strike": strike_onsets(ball_xy),
+                  "reacquire": gap_ends}
+    contrast = motion_contrast(features["mean_speed_raw"])
     fixed = known_dead_mask(len(dead), game)
-    counts = {"start_crossing": 0, "start_gap": 0, "start_kept": 0,
-              "end_kick": 0, "end_reacquire_kick": 0, "end_reacquire": 0, "end_kept": 0}
+    counts = {}
     shifts = {"start": [], "end": []}
     kept = []
+
+    def window(lo, hi, first, last):
+        return max(lo, first), min(hi, last)
 
     out = np.zeros_like(dead)
     for _, first, last in half_video_blocks(game):
         spells = []
-        window = dead[first:last + 1].astype(np.int8)
-        edges = np.diff(np.concatenate(([0], window, [0])))
+        mask = dead[first:last + 1].astype(np.int8)
+        edges = np.diff(np.concatenate(([0], mask, [0])))
         for a, b in zip(np.flatnonzero(edges == 1) + first, np.flatnonzero(edges == -1) + first):
             new_a, new_b = a, b
-            start_rule = "documented" if fixed[a] else "kept"
+            start_rule = "documented"
             if not fixed[a]:
-                lo, hi = a - START_BEFORE_S * FPS, a + START_AFTER_S * FPS
+                lo, hi = window(a - START_BEFORE_S * FPS, a + START_AFTER_S * FPS, first, last)
                 c = crossings[(crossings >= lo) & (crossings <= hi)]
-                g = gaps[(gaps >= lo) & (gaps <= hi)]
                 if len(c):
                     new_a, start_rule = int(c[np.argmin(np.abs(c - a))]), "crossing"
-                elif len(g):
-                    new_a, start_rule = int(g[np.argmin(np.abs(g - a))]), "gap"
+                else:
+                    drop = lo + int(np.argmin(contrast[lo:hi + 1]))
+                    g = gaps[(gaps >= drop - CHANGE_LEAD_S * FPS) &
+                             (gaps <= drop + GAP_LAG_S * FPS)]
+                    if len(g):
+                        new_a, start_rule = int(g[np.argmin(np.abs(g - drop))]), "gap"
+                    else:
+                        new_a, start_rule = drop, "motion"
             counts["start_" + start_rule] = counts.get("start_" + start_rule, 0) + 1
-            lo, hi = b - END_BEFORE_S * FPS, b + END_AFTER_S * FPS
-            k = kicks[(kicks >= lo) & (kicks <= hi) & (kicks > new_a)]
-            r = gap_ends[(gap_ends >= lo) & (gap_ends <= hi) & (gap_ends > new_a)]
-            end_rule = "kept"
+
             if fixed[a] and abs(b - SECOND_HALF_KICKOFF) <= END_BEFORE_S * FPS:
                 new_b, end_rule = SECOND_HALF_KICKOFF, "documented"
-            elif len(k):
-                new_b, end_rule = int(k[np.argmin(np.abs(k - b))]), "kick"
-            elif len(r):
-                seen = int(r[np.argmin(np.abs(r - b))])
-                s = onsets[(onsets >= seen) & (onsets <= seen + REACQUIRE_KICK_S * FPS)]
-                new_b = int(s[0]) if len(s) else seen
-                end_rule = "reacquire_kick" if len(s) else "reacquire"
+            else:
+                lo, hi = window(max(b - END_BEFORE_S * FPS, new_a + MIN_STOPPAGE),
+                                b + END_AFTER_S * FPS, first, last)
+                if hi <= lo:
+                    new_b, end_rule = b, "kept"
+                else:
+                    rise = lo + int(np.argmax(contrast[lo:hi + 1]))
+                    new_b, end_rule = rise, "motion"
+                    for group in END_EVENT_GROUPS:
+                        found = []
+                        for name in group:
+                            frames = end_events[name]
+                            e = frames[(frames >= rise - CHANGE_LEAD_S * FPS) &
+                                       (frames <= rise + CHANGE_LAG_S * FPS) &
+                                       (frames >= new_a + MIN_STOPPAGE)]
+                            if len(e):
+                                found.append((int(e.min()), name))
+                        if found:
+                            new_b, end_rule = min(found)
+                            break
             counts["end_" + end_rule] = counts.get("end_" + end_rule, 0) + 1
             shifts["start"].append(new_a - a)
             shifts["end"].append(new_b - b)

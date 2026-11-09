@@ -150,6 +150,7 @@ def compute(data):
         "ball_known_share": rolling_mean(known.astype(np.float64), KNOWN_HALF),
         "missing_run": run_lengths(~known),
         "n_visible": n_visible,
+        "mean_speed_raw": mean_speed,
         "mean_speed": rolling_mean(mean_speed, SMOOTH_HALF),
         "mean_speed_long": rolling_mean(mean_speed, LONG_HALF),
         "moving_share": rolling_mean(moving, SMOOTH_HALF),

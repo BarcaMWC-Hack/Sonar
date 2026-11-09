@@ -23,10 +23,17 @@ All three print scores, counts and shares only, so their output is safe to paste
    logit is a likelihood ratio; a 40% dead prior is added separately.
 3. **Two-state Viterbi** per half with a switching cost, so a stoppage needs a few seconds of
    evidence and a slow moment cannot split a possession.
-4. **Edge refinement**: a stoppage starts at the first frame the ball is seen over a line (else
-   the start of a long ball gap); it ends at a held-then-struck ball, else at the strike just
-   after the ball reappears from a long gap, else where Viterbi put it.
-5. **Labels** (`sonar/make_submission.py`): dead → D; each alive stretch gets the team call from
+4. **Edge refinement** from unsmoothed signals, because the Viterbi edges inherit up to 10 s of
+   smoothing. Each edge records which rule placed it (`start_rule` / `end_rule`).
+   - **Start:** the first frame the ball is over a line (`crossing`, 29 stoppages). Otherwise
+     the moment the players decelerate, i.e. the biggest drop in mean speed comparing the next
+     2 s with the previous 2 s (`motion`, 37), or the ball vanishing just before that (`gap`, 13).
+   - **End:** find the moment the players accelerate (biggest rise, same measure). That peak
+     trails the restart, so take the *earliest* ball event from 3 s before it to 1 s after: a
+     held ball struck (`kick`, 5) or the ball reappearing (`reacquire`, 27), else any ball going
+     fast (`strike`, 23), else the acceleration itself (`motion`, 24). Every kind of restart is
+     the first strike of a held, placed or unseen ball; later strikes are open play.
+5. **Labels** (`sonar/make_submission.py`): dead Ã¢â€ â€™ D; each alive stretch gets the team call from
    `sonar/possession.py` (see [POSSESSION.md](POSSESSION.md)). `--team nearest` uses the
    baseline's nearest player instead, which is what the public numbers below were measured with.
 
@@ -45,10 +52,10 @@ All three print scores, counts and shares only, so their output is safe to paste
 
 | check | result |
 |---|---|
-| weak labels, fit on one half and score the other | AUC 0.82 (1→2), 0.87 (2→1) |
-| dead share of graded time (a match: ~40%) | 37.1% |
-| stoppages (a match: ~80-130) | 80, median 18 s |
-| tagged set pieces with a predicted restart within 5 s | 50 of 58 |
+| weak labels, fit on one half and score the other | AUC 0.82 (1Ã¢â€ â€™2), 0.87 (2Ã¢â€ â€™1) |
+| dead share of graded time (a match: ~40%) | 38.2% |
+| stoppages (a match: ~80-130) | 80, median 19 s |
+| tagged set pieces with a predicted restart within 5 s | 51 of 58 |
 
 Only `switch_cost / temperature` matters to the Viterbi path. The sweep in
 `deadball_report.py --grid` runs from 41 stoppages (too few) to 94 with sub-3 s fragments
@@ -58,13 +65,18 @@ appearing; 25 frames per switch (one second of evidence) gives 80.
 
 | | sonar | baseline_smooth50 |
 |---|---|---|
-| D recall / precision / F1 | 0.499 / 0.888 / 0.639 | 0.214 / 0.657 / 0.323 |
-| macroF1 | 0.752 | 0.621 |
-| spellF1 (5-95% bootstrap) | 0.381 (0.257-0.505) | 0.326 (0.214-0.447) |
+| D recall / precision / F1 | 0.498 / 0.951 / 0.653 | 0.214 / 0.657 / 0.323 |
+| macroF1 | 0.759 | 0.621 |
+| spellF1 (5-95% bootstrap) | 0.391 (0.257-0.524) | 0.326 (0.214-0.447) |
 
 The team call is identical in both, so the difference is the dead-ball detector. The spellF1
 intervals overlap almost completely, as they must on 17 possessions. This shows the pipeline is
 wired correctly, not that it is better on the full match.
+
+`tools/timing_report.py` buckets how far each of our label changes is from the true one in the
+public window (counts only). It explains what the edges mean; it is ~20 events and must not be
+used to tune. The edge rules above were changed once after looking at it, because it exposed a
+reasoning flaw (taking the *latest* ball event caught the first open-play pass), and not again.
 
 ## No hand labels on this match
 
@@ -76,7 +88,7 @@ Tagging.
 
 ## Next steps
 
-- On the public window only 3 of 20 true transitions land within 1 s, so edge timing matters
+- On the public window only 4 of 20 true transitions land within 1 s, so edge timing matters
   more than catching extra stoppages.
 - Add fouls and offsides: a whistle shows up as everyone decelerating together, with the ball
   inside the pitch.
