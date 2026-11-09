@@ -31,6 +31,7 @@ FPS = 25
 SMOOTH_HALF = 25
 LABEL_EVIDENCE = 0.5        # |ball evidence| above this makes a frame a training example
 CLIP = 4.0                  # cap on the shape log-odds, so a freak shape cannot dominate
+L2 = 1.0
 NAMES = ("spread_y", "spread_x", "forward", "advance")
 
 
@@ -61,6 +62,23 @@ def features(data, game=GAME):
     return out
 
 
+def centred(x, alive, game=GAME):
+    """x with each half's mean over its live frames removed.
+
+    The gap between the teams' shapes has its own baseline in each half (tactics, substitutions).
+    Left in, a model fitted on one half is biased on the other by up to 0.6 log-odds. No labels
+    are used.
+    """
+    out = x.copy()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        for _, first, last in half_video_blocks(game):
+            half = np.zeros(len(x), dtype=bool)
+            half[first:last + 1] = True
+            out[half] -= np.nanmean(x[half & alive], axis=0)
+    return out
+
+
 def training_mask(ball_ev, alive, x):
     return alive & (np.abs(ball_ev) > LABEL_EVIDENCE) & ~np.isnan(x).any(axis=1)
 
@@ -68,7 +86,7 @@ def training_mask(ball_ev, alive, x):
 def fit(x, ball_ev, alive):
     """[bias, *weights] of log-odds Barca over Athletic, from the frames the ball is clear on."""
     train = training_mask(ball_ev, alive, x)
-    return deadball.fit_logistic(x[train], (ball_ev[train] > 0).astype(float))
+    return deadball.fit_logistic(x[train], (ball_ev[train] > 0).astype(float), l2=L2)
 
 
 def log_odds(x, w):

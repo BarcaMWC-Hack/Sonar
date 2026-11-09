@@ -206,7 +206,7 @@ def evidence(data, dead, shape_weight=None):
     shape_weight = SHAPE_WEIGHT if shape_weight is None else shape_weight
     ball = ball_evidence(data)
     alive = deadball.graded_mask(len(dead)) & ~dead
-    x = team_shape.features(data)
+    x = team_shape.centred(team_shape.features(data), alive)
     w = team_shape.fit(x, ball, alive)
     shape = team_shape.log_odds(x, w)
     return ball + shape_weight * shape, {"ball": ball, "shape": shape, "shape_x": x,

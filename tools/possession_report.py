@@ -98,7 +98,8 @@ def shape_cross_half(x, ball_ev, alive):
     usable = team_shape.training_mask(ball_ev, alive, x)
     y = ball_ev > 0
     for train, test, label in ((first, ~first, "1->2"), (~first, first, "2->1")):
-        w = deadball.fit_logistic(x[usable & train], y[usable & train].astype(float))
+        w = deadball.fit_logistic(x[usable & train], y[usable & train].astype(float),
+                                  l2=team_shape.L2)
         s = team_shape.log_odds(x[usable & test], w)
         print("  team-shape model, fit half {} and score the other: AUC {:.3f} on {} frames".format(
             label, auc(s, y[usable & test]), int((usable & test).sum())))
