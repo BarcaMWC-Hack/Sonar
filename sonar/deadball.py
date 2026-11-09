@@ -43,7 +43,9 @@ OPEN_PLAY_TRIM_S = 1
 SETPIECE_GUARD_S = 10
 OOB_MARGIN = 0.5                    # metres beyond a line before "out" counts
 OOB_MEMORY_S = 10                   # a ball seen out stays evidence for this long
-L2 = 1.0
+# Stoppages, not frames, are the independent examples: about 25 per half support these weights.
+# Set by the lowest held-out log loss on the weak labels (fit one half, score the other).
+L2 = 100.0
 WEIGHT_DECIMALS = 4                 # rounded so the fit is identical across BLAS builds
 
 # Viterbi. TEMPERATURE scales per-frame evidence down because the features are smoothed over
@@ -117,7 +119,8 @@ def recent(mask, frames):
 
 def design(f):
     """(matrix, column names). Continuous columns are clipped, never standardised by the data,
-    so a column means the same thing on any match."""
+    so a column means the same thing on any match. A fast ball and a touchline restart spot are
+    left out: their weights change sign between the halves."""
     with np.errstate(invalid="ignore"):
         known = f["ball_known"]
         bs = f["ball_speed"]
@@ -136,11 +139,9 @@ def design(f):
             ("oob_recent", recent(oob, OOB_MEMORY_S * FPS).astype(float)),
             ("ball_still", (bs < 0.5).astype(float)),
             ("ball_slow", ((bs >= 0.5) & (bs < 2.0)).astype(float)),
-            ("ball_fast", (bs > 8.0).astype(float)),
             ("spot_centre", (f["spot"] == dbf.SPOT_CENTRE).astype(float)),
             ("spot_corner", (f["spot"] == dbf.SPOT_CORNER).astype(float)),
             ("spot_goal_area", (f["spot"] == dbf.SPOT_GOAL_AREA).astype(float)),
-            ("spot_touchline", (f["spot"] == dbf.SPOT_TOUCHLINE).astype(float)),
             ("few_visible", (f["n_visible"] < 18).astype(float)),
         ]
     names = [name for name, _ in columns]
