@@ -14,14 +14,17 @@ So:
      evidence = BALL_WEIGHT * control * speed * side
   2. Team shape (sonar/team_shape.py): the side with the ball spreads out, so a small
      SHAPE_WEIGHT times the shape log-odds is added on every frame. It is slow, so it mostly
-     decides whether a run of touches really was a change, while the ball evidence still sets
-     where the change lands.
+     decides whether a run of touches really was a change.
   3. A two-state Viterbi per live stretch with SWITCH_COST: a change of possession has to be
      paid for with that much accumulated evidence by the new team.
   4. Smart Tagging phases whose Team tag names the side in possession (Build Up, Progression,
-     ...: 64-87% agreement with the controlled call on this file) name the team for a live
-     stretch the ball says nothing about. They never place a change: their edges are seconds
+     ...: 63-87% agreement with the controlled call on this file) name the team for a live
+     stretch the tracking says nothing about. They never place a change: their edges are seconds
      off. The "Defending in ..." codes are mirror copies naming the other side and are not used.
+  5. localize() then moves each switch to the new team's first touch or control after the old
+     team's last. The decoder decides WHETHER possession changed -- slow team shape included --
+     and this decides WHEN, from the ball alone: touches (sharp changes of ball velocity next to
+     a player, ~16 per live minute) and frames of clear control.
 
 A live stretch with no evidence of either kind is left X, which the scorer carries forward.
 """
@@ -50,6 +53,16 @@ SWITCH_COST = 3.0
 # the new team barely controls from 59 to 43. Larger weights are no clearer (77.1-78.4%), and the
 # signal lags turnovers by seconds, so the smallest weight that captures the gain is kept.
 SHAPE_WEIGHT = 0.05
+# Touches and switch placement
+# Frames between the velocity before and after a touch. The tracker smooths the ball's path, so a
+# touch's velocity change is spread over ~0.2 s: at 3 frames only 4.1 touches per live minute
+# clear TOUCH_DV, at 6 frames 15.8 (football: roughly 15-25), at 12 frames 19.8. Counted by
+# tools/possession_errors.py.
+TOUCH_LAG = 6
+TOUCH_DV = 5.0              # m/s change of ball velocity that counts as a touch
+TOUCH_RADIUS = 1.5          # m; the touching player must be this close
+CONTROL_THRESHOLD = 0.3     # |ball evidence| that counts as one team controlling the ball
+LOCALIZE_S = 3              # a switch moves at most this far, and never past a neighbour
 POSSESSION_CODES = {"build up", "progression", "creating chances", "attacking transition",
                     "ball in final third", "ball in the box", "long ball"}
 TEAM_TAGS = {"barcelona": +1.0, "atletic club": -1.0}
@@ -81,6 +94,99 @@ def ball_evidence(data, radius=None, falloff=None, slow=None, fast=None):
         side = np.tanh((d_away - d_home) / SIDE_SCALE)
     evidence = BALL_WEIGHT * control * gate * side
     return np.where(np.isfinite(nearest), evidence, 0.0)
+
+
+def ball_velocity(ball_xy, half=2):
+    """(n, 2) ball velocity in m/s from positions half frames either side; NaN where unknown."""
+    n = len(ball_xy)
+    out = np.full((n, 2), np.nan)
+    out[half:n - half] = (ball_xy[2 * half:] - ball_xy[:n - 2 * half]) / (2.0 * half / FPS)
+    return out
+
+
+def touches(data):
+    """(frames, side) of ball touches: a sharp change of ball velocity next to a player.
+
+    A touch -- a pass, a reception, a block, a header -- changes the ball's velocity, so it shows
+    as a jump between the velocity just before and just after. A ball rolling past a player
+    without changing course is not a touch, however close it passes. Each touch is reduced to the
+    frame of largest change, and side is +1 when the nearest player is Barca, -1 for Athletic.
+    """
+    ball_xy = data["ball"][:, :2].astype(np.float64)
+    v = ball_velocity(ball_xy)
+    n = len(v)
+    dv = np.full(n, np.nan)
+    lag = TOUCH_LAG
+    dv[lag:n - lag] = np.hypot(*(v[2 * lag:] - v[:n - 2 * lag]).T)
+    d_home, d_away = nearest_by_team(data)
+    with np.errstate(invalid="ignore"):
+        candidate = (dv > TOUCH_DV) & (np.minimum(d_home, d_away) < TOUCH_RADIUS)
+    frames, sides = [], []
+    edges = np.diff(np.concatenate(([0], candidate.astype(np.int8), [0])))
+    for a, b in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)):
+        t = a + int(np.nanargmax(dv[a:b]))
+        frames.append(t)
+        sides.append(1.0 if d_home[t] < d_away[t] else -1.0)
+    return np.array(frames, dtype=np.int64), np.array(sides)
+
+
+def control_side(ball_ev, touch_frames, touch_sides, n):
+    """Per frame: +1 Barca controls or touches the ball, -1 Athletic, 0 neither."""
+    side = np.where(ball_ev > CONTROL_THRESHOLD, 1.0,
+                    np.where(ball_ev < -CONTROL_THRESHOLD, -1.0, 0.0))
+    side[touch_frames] = touch_sides
+    return side
+
+
+def localize(labels, dead, ball_ev, data, game=deadball.GAME):
+    """(labels with each H<->A switch moved to the new team's first touch, counts).
+
+    The decoder decides which possessions there are; this decides where each one starts. Within
+    LOCALIZE_S either side of a switch, and never past the neighbouring switch or stoppage, the
+    switch moves to the first frame the new team touches or controls the ball after the last
+    frame the old team did. CHALLENGE.md: a change happens when the other team "gains
+    controlled possession", and loose or contested play stays with the last team.
+    """
+    touch_frames, touch_sides = touches(data)
+    side = control_side(ball_ev, touch_frames, touch_sides, len(labels))
+    out = labels.copy()
+    counts = {"moved": 0, "kept": 0, "shifts": []}
+    window = LOCALIZE_S * FPS
+    for _, first, last in deadball.half_video_blocks(game):
+        seg = labels[first:last + 1]
+        change = np.flatnonzero(seg[1:] != seg[:-1]) + 1
+        bounds = np.concatenate(([0], change, [len(seg)])) + first
+        run_start = first       # where the current run starts after earlier moves
+        for k in range(1, len(bounds) - 1):
+            s = bounds[k]
+            old, new = labels[s - 1], labels[s]
+            if old not in "HA" or new not in "HA":
+                run_start = s
+                continue
+            lo = max(bounds[k - 1] + 1, run_start + 1, s - window)
+            hi = min(bounds[k + 1] - 1, s + window)
+            if hi < lo:
+                counts["kept"] += 1
+                run_start = s
+                continue
+            old_sign = 1.0 if old == "H" else -1.0
+            old_frames = np.flatnonzero(side[lo:hi + 1] == old_sign) + lo
+            new_frames = np.flatnonzero(side[lo:hi + 1] == -old_sign) + lo
+            if len(old_frames):
+                new_frames = new_frames[new_frames > old_frames.max()]
+            if not len(new_frames):
+                counts["kept"] += 1
+                run_start = s
+                continue
+            target = int(new_frames[0])
+            if target < s:
+                out[target:s] = new
+            elif target > s:
+                out[s:target] = old
+            counts["moved" if target != s else "kept"] += 1
+            counts["shifts"].append(target - s)
+            run_start = target
+    return out, counts
 
 
 def tag_evidence(events, n):

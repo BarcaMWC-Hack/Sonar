@@ -106,7 +106,22 @@ def tag_alignment(gt, setpieces):
         tagged_restarts, len(restarts)))
 
 
+PUBLIC_CHECK_MESSAGE = (
+    "This tool reads the public 5-minute ground truth. RULES.md: those minutes are for checking "
+    "that the pipeline is wired correctly, never for training, tuning or choosing between "
+    "settings. Run it only to confirm the pipeline works, with --public-check, and do not act "
+    "on its numbers.")
+
+
+def require_public_check_flag():
+    import sys
+    if "--public-check" not in sys.argv:
+        sys.exit(PUBLIC_CHECK_MESSAGE)
+    sys.argv.remove("--public-check")
+
+
 if __name__ == "__main__":
+    require_public_check_flag()
     data = atd.load()
     n = len(data["ball"])
     features = dbf.compute(data)

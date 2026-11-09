@@ -41,11 +41,21 @@ through loose balls, so frames where nobody controls the ball should not vote.
 3. **Viterbi with a switching cost** per live stretch, on that tracking evidence: possession
    changes only when the new team has built up enough of it, and only the tracking ever decides
    *when* it changes.
-4. **Smart Tagging names the team for a live stretch with no tracking evidence at all.** Phases like
-   Build Up and Progression name the team in possession (83-87% agreement with the controlled
-   call), but their edges are seconds off, so they never place a change. (A first version let
-   them push on every untracked frame, which let tag edges move possession changes.) The
-   "Defending in …" codes are mirror copies naming the other side and are ignored.
+4. **Switch placement** (`localize()`): the decoder decides *whether* possession changed; this
+   decides *when*. Each switch moves (at most 3 s, never past a neighbouring switch or stoppage)
+   to the new team's first touch or controlled frame after the old team's last. A touch is a
+   jump of more than 5 m/s in the ball's velocity, 0.24 s before vs after, with a player within
+   1.5 m: 15.8 per live minute, in football's roughly 15-25 range. (Measuring the jump over
+   only 0.12 s found 4 per minute, because the tracker smooths the ball's path.) This follows
+   CHALLENGE.md: possession changes when the other team "gains controlled possession", and
+   loose play stays with the last team. `--no-localize` turns it off.
+5. **Smart Tagging names the team for a live stretch with no ball or team-shape evidence.** Team
+   shape is available on every frame, so on the delivered file this reaches at most one of the 81
+   live stretches; 8 stretches have no ball evidence and take their team from shape. The phases it
+   reads agree with the controlled call 63-87% of the time (Build Up 87%, Progression 83%, Long Ball
+   63%), but their edges are seconds off, so they never place a change. (A first version let them
+   push on every untracked frame, which let tag edges move possession changes.) The "Defending in …"
+   codes are mirror copies naming the other side (13-30% agreement) and are ignored.
 
 ## How the settings were chosen, without the ground truth
 
@@ -75,25 +85,53 @@ shape lags turnovers, so the smallest weight is kept. The cost is more quick rev
 some will be real turnovers won straight back, some flicker. The final file has 277 possessions
 of mean 14.2 s, and Barça has 56% of live time.
 
+Switch placement, from `possession_errors.py`: of 197 switches, 152 move (95 by under 0.4 s, 52
+later by 0.4-3 s, 14 earlier) and 45 stay. The new team is touching or controlling the ball
+within 0.2 s of the switch at 166 of them, against 91 before. That check is partly circular, as
+it is what the rule aims at. Switches with almost no follow-up control drop from 43 to 36. The
+possession count is unchanged (277) and tag agreement barely moves (77.4% → 77.0%).
+
 `possession_errors.py` also ruled two suspects out: the tracker's straight-line gap filling
 covers 3.4% of tracked live frames and never more than a second at a time, and only 3 of ~200
 switches land at the end of a tracking gap.
 
+## Switch cost on other games (full pipeline)
+
+Metrica's sample games 1 and 2 are other matches, so comparing settings on them is allowed.
+`tools/external_full.py` (PR #9) runs this pipeline on them, with a truth built from the event data
+and dead frames taken from that truth. The numbers are simulated: they show direction, not match
+results. Shape weight 0.05, first-touch placement on:
+
+| switch cost | game 1 | game 2 | mean |
+| --- | --- | --- | --- |
+| 1.5 | 0.694 | 0.672 | 0.683 |
+| **3.0 (chosen)** | 0.665 | 0.676 | 0.671 |
+| 2.0 | 0.689 | 0.688 | 0.688 |
+
+Held out, the sign depends on which game picks the setting: 1.5, chosen on game 1, loses 0.004 on
+game 2; 2.0, chosen on game 2, gains 0.024 on game 1. The truth starts each change at the new team's
+event, which may favour first-touch placement and a lower switch cost by construction. The default
+stays at 3.0 until the team decides; 2.0 is the candidate.
+
 ## Public 5 minutes, as a correctness check only
 
-| | sonar | same dead ball, baseline team call | baseline_smooth50 |
-|---|---|---|---|
-| possessions (truth: 17, mean 14.2 s) | 19, mean 14.2 s | 25, 10.8 s | 26, 10.8 s |
-| spellF1 (5-95% bootstrap) | 0.433 (0.277-0.589) | 0.391 (0.257-0.524) | 0.326 (0.214-0.447) |
-| macroF1 | 0.778 | 0.759 | 0.621 |
-| right team, where both say the ball is live | 89.9% | 86.5% | 85.8% |
-| true changes matched within 1 s | 3 of 20 | 4 of 20 | 2 of 20 |
+| | sonar | sonar `--no-localize` | same dead ball, baseline team call | baseline_smooth50 |
+|---|---|---|---|---|
+| possessions (truth: 17, mean 14.2 s) | 19, mean 14.2 s | 19, mean 14.2 s | 25, 10.8 s | 26, 10.8 s |
+| spellF1 (5-95% bootstrap) | 0.400 (0.233-0.567) | 0.433 (0.277-0.589) | 0.391 (0.257-0.524) | 0.326 (0.214-0.447) |
+| macroF1 | 0.765 | 0.778 | 0.759 | 0.621 |
+| right team, where both say the ball is live | 87.7% | 89.9% | 86.5% | 85.8% |
+| true changes matched within 1 s | 4 of 20 | 3 of 20 | 4 of 20 | 2 of 20 |
 
 The intervals overlap; this says the pipeline is right, not which version wins on the full match.
-Team shape made the team call more often right here too (86.5% → 89.9% of jointly-live frames),
-matching the tag-agreement gain on the full match, but did not move the timing of changes.
-`tools/timing_report.py` shows most of our possession changes are still more than 3 s from a
-true one, in both directions: missed and extra changes rather than a constant offset.
+Team shape made the team call more often right (86.5% → 89.9% of jointly-live frames), matching
+the tag-agreement gain on the full match. Switch placement moved this window slightly the other
+way. With 12 possession changes that is noise-sized, but it is the one open question about what
+the labels mean: **during a loose ball, does the truth switch at the new team's first controlled
+touch (CHALLENGE.md's wording, and what `localize()` does), or earlier, at the interception or
+the old team's last touch?** We do not use the public 5 minutes or any answer key to decide it, and nothing seen in the match video
+becomes a label, a correction or a frame-specific constant (RULES.md, rule 1). Placement follows the
+written rule (CHALLENGE.md), the question stays open, and it is listed as a limitation.
 
 ## Ideas not yet tried
 
@@ -102,9 +140,9 @@ true one, in both directions: missed and extra changes rather than a constant of
 - Make the evidence asymmetric: an interception followed by a pass between the new team's
   players is stronger evidence than one touch. This is the most direct attack on the 43
   switches the new team barely controls.
-- A video check of 10-20 of our switches, split by how much follow-up control they had, would
-  say whether the weak ones are real turnovers or flicker.
+- Judge the weak switches (new team barely controls the ball) on other games with an other-game
+  yardstick. Watching this match to understand it is fine; turning it into labels, corrections or
+  frame-specific constants is not (RULES.md, rule 1).
 - Check where a change lands: with no evidence while the ball is loose, the decoder puts the
   change at the new team's first controlled touch, which matches CHALLENGE.md's "gains
-  controlled possession". A video check of a dozen changes would confirm the ground truth does
-  the same.
+  controlled possession". Left as a stated assumption.

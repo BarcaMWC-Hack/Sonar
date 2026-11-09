@@ -91,3 +91,33 @@ if __name__ == "__main__":
         int(np.sum(support < 3)), int(np.sum((support >= 3) & (support < 10))),
         int(np.sum((support >= 10) & (support < 25))), int(np.sum(support >= 25))))
     print("   switches reversed within 3 s: {}".format(reversed_))
+
+    t_frames, t_sides = possession.touches(data)
+    live_t = alive[t_frames]
+    live_minutes = alive.sum() / FPS / 60.0
+    print("\n4. Touches (ball velocity jumps > {} m/s within {} m of a player)".format(
+        possession.TOUCH_DV, possession.TOUCH_RADIUS))
+    print("   {} in live play, {:.1f} per live minute, {:.0%} by Barca".format(
+        int(live_t.sum()), live_t.sum() / live_minutes, np.mean(t_sides[live_t] > 0)))
+
+    side = possession.control_side(ev, t_frames, t_sides, n)
+    localized, counts = possession.localize(labels, dead, ev, data)
+
+    def on_ball(lab):
+        hit = total = 0
+        for f, team in switches(lab):
+            sign = 1.0 if team == "H" else -1.0
+            hit += bool(np.any(side[max(0, f - 5):f + 6] == sign))
+            total += 1
+        return hit, total
+    shifts = np.array(counts["shifts"]) / FPS
+    print("\n5. Re-placing switches at the new team's first touch or control")
+    print("   moved {}, kept {} | earlier by 1-3 s {}, 0.4-1 s {} | within 0.4 s {} | "
+          "later by 0.4-1 s {}, 1-3 s {}".format(
+              counts["moved"], counts["kept"], int(np.sum(shifts <= -1)),
+              int(np.sum((shifts > -1) & (shifts <= -0.4))), int(np.sum(np.abs(shifts) < 0.4)),
+              int(np.sum((shifts >= 0.4) & (shifts < 1))), int(np.sum(shifts >= 1))))
+    for name, lab in (("before", labels), ("after", localized)):
+        hit, total = on_ball(lab)
+        print("   {:<6} new team touching or controlling the ball within 0.2 s of the switch: "
+              "{} of {}".format(name, hit, total))

@@ -130,3 +130,6 @@ if __name__ == "__main__":
                    events, ball)
             if tag:
                 print(tag)
+    final = possession.labels(dead, ball + possession.SHAPE_WEIGHT * shape, tags)
+    final, _ = possession.localize(final, dead, ball, data)
+    report("default + localize", final, events, ball)
