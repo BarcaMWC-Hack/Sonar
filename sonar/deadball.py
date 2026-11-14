@@ -35,7 +35,7 @@ from games import GAME, half_video_blocks  # noqa: E402
 from sonar import deadball_features as dbf  # noqa: E402
 
 # Params
-IDSSE_WEIGHTS = os.path.join(HERE, "deadball_idsse_weights.json")
+OPEN_WEIGHTS = os.path.join(HERE, "deadball_open_weights.json")
 FPS = 25
 SECOND_HALF_KICKOFF = 113742        # FAQ.md: 110808..113741 are graded and all D
 PRE_SETPIECE_S = 8
@@ -399,12 +399,13 @@ def refine(dead, data, features, game=GAME):
     return out, counts, kept
 
 
-def idsse_weights(names, path=IDSSE_WEIGHTS):
-    """Weights fitted on the open IDSSE matches' true dead flags (tools/idsse_fit.py)."""
+def open_weights(names, path=OPEN_WEIGHTS):
+    """Weights fitted on the open IDSSE and SkillCorner matches' true dead flags
+    (tools/open_fit.py)."""
     with open(path) as f:
         stored = json.load(f)
     if stored["names"] != ["bias"] + list(names):
-        raise ValueError("{} was fitted on other columns; re-run tools/idsse_fit.py".format(path))
+        raise ValueError("{} was fitted on other columns; re-run tools/open_fit.py".format(path))
     return np.array(stored["weights"])
 
 
@@ -412,7 +413,8 @@ def detect(data, events, game=GAME, refine_edges=True, weights=None, **decode_kw
     """(dead mask, details). details carries the fitted weights and the per-frame LLR.
 
     weights=None fits the model on this match's Smart Tagging weak labels (the release model);
-    weights="idsse" uses the stored fit on the open IDSSE matches' true dead flags instead."""
+    weights="open" uses the stored fit on the open IDSSE and SkillCorner matches' true dead
+    flags instead."""
     features = dbf.compute(data)
     x, names = design(features)
     n = len(x)
@@ -422,7 +424,7 @@ def detect(data, events, game=GAME, refine_edges=True, weights=None, **decode_kw
         require_graded(train, game)
         w = fit_logistic(x[train], weak_dead[train].astype(float))
     else:
-        w = idsse_weights(names) if isinstance(weights, str) else np.asarray(weights)
+        w = open_weights(names) if isinstance(weights, str) else np.asarray(weights)
     llr = log_likelihood_ratio(x, w)
     viterbi_dead = decode(llr, n, game, **decode_kwargs)
     dead, refine_counts, stoppages = (refine(viterbi_dead, data, features, game) if refine_edges
