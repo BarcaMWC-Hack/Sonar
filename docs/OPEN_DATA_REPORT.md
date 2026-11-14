@@ -83,7 +83,11 @@ These come from the label-free checks; no ground truth was used.
 - The new model calls more time dead on Barça–Athletic (48.0%, near the top of the 30–50% band). The open matches average about 46% dead, so this is plausible, but it is the main risk.
 - This is not checked against the public 5 minutes, by design.
 
-## Decisions for the team
+## Decision (2026-11-14)
 
-1. Should we adopt `--deadball open` for the submission? Lethabo should review, since it replaces the weak-label training in his model.
-2. If we adopt it, `docs/TECHNICAL.md` needs a paragraph on the two open datasets and their licence credit, and we record MD5 `89a47208…`.
+The team adopted it: `--deadball open` is now the default in `sonar/make_submission.py`, and `--deadball weak` rebuilds the earlier file (`f3b7993f…`).
+
+- **New expected MD5:** `89a47208f3290db232ed237ec4f29cfc`.
+- **Documents:** `docs/TECHNICAL.md` now describes the open-data training and credits both datasets.
+- **Public 5-minute check,** run after the choice: spellF1 0.379 for the new build against 0.411 for the earlier one; macroF1 0.761 against 0.755. On 17 possessions that gap is far inside the noise (about ±0.32), and per the rules it was not used to choose.
+- **Review:** Lethabo is the reviewer on PR #13.

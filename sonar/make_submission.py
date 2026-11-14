@@ -4,10 +4,13 @@
     python -m sonar.make_submission --name try2      # evaluation/results/try2.csv
     python -m sonar.make_submission --team nearest   # baseline team call, for comparison
     python -m sonar.make_submission --no-localize    # switches where the decoder puts them
+    python -m sonar.make_submission --deadball weak  # earlier build: dead-ball fit on weak labels
 
 How a frame gets its label:
   - outside the two graded halves: X (never scored)
-  - the dead-ball detector says dead: D
+  - the dead-ball detector says dead: D. Its weights are the stored fit on 27 open matches'
+    true dead flags (tools/open_fit.py); --deadball weak refits them on this match's Smart
+    Tagging weak labels instead
   - otherwise the frame is inside an alive stretch, and gets the team call. By default that is
     sonar/possession.py (control-weighted evidence, switching cost). With --team nearest it is a
     centred majority vote of the nearest-player codes, kept inside the stretch so a vote never
@@ -88,10 +91,10 @@ def main():
     parser.add_argument("--team", choices=("control", "nearest"), default="control",
                         help="control: sonar/possession.py (default); nearest: the baseline's "
                              "nearest player with a +/-2 s majority vote")
-    parser.add_argument("--deadball", choices=("weak", "open"), default="weak",
-                        help="weak: fit the dead-ball model on this match's Smart Tagging weak "
-                             "labels (release); open: use the fit on the open IDSSE and SkillCorner "
-                             "matches' true dead flags (sonar/deadball_open_weights.json)")
+    parser.add_argument("--deadball", choices=("open", "weak"), default="open",
+                        help="open (default): the dead-ball fit on the open IDSSE and SkillCorner "
+                             "matches' true dead flags (sonar/deadball_open_weights.json); weak: "
+                             "fit on this match's Smart Tagging weak labels (the earlier build)")
     parser.add_argument("--possession-cost", type=float, default=possession.SWITCH_COST,
                         help="switching cost of the possession decoder (default %(default)s)")
     parser.add_argument("--no-localize", action="store_true",
