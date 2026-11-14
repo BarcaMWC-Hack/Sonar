@@ -88,6 +88,12 @@ def main():
     parser.add_argument("--team", choices=("control", "nearest"), default="control",
                         help="control: sonar/possession.py (default); nearest: the baseline's "
                              "nearest player with a +/-2 s majority vote")
+    parser.add_argument("--deadball", choices=("weak", "idsse"), default="weak",
+                        help="weak: fit the dead-ball model on this match's Smart Tagging weak "
+                             "labels (release); idsse: use the fit on the open IDSSE matches' "
+                             "true dead flags (sonar/deadball_idsse_weights.json)")
+    parser.add_argument("--possession-cost", type=float, default=possession.SWITCH_COST,
+                        help="switching cost of the possession decoder (default %(default)s)")
     parser.add_argument("--no-localize", action="store_true",
                         help="keep possession switches where the decoder puts them instead of "
                              "moving them to the new team's first touch (control only)")
@@ -95,10 +101,12 @@ def main():
 
     data = atd.load()
     events = load_smart_tagging.load()
-    dead, _ = deadball.detect(data, events)
+    dead, _ = deadball.detect(data, events,
+                              weights="idsse" if args.deadball == "idsse" else None)
     if args.team == "control":
         evidence, details = possession.evidence(data, dead)
-        labels = possession.labels(dead, evidence, possession.tag_evidence(events, len(dead)))
+        labels = possession.labels(dead, evidence, possession.tag_evidence(events, len(dead)),
+                                   switch_cost=args.possession_cost)
         if not args.no_localize:
             labels, _ = possession.localize(labels, dead, details["ball"], data)
     else:
