@@ -1,0 +1,18 @@
+# Exact environment the new_model submission was built and verified with.
+# Python 3.13.12. Install with:
+#
+#     python -m pip install -r new_model/requirements.txt
+#
+# These are the versions that reproduced new_model/submission.csv byte for byte
+# (md5 6aeaf0fce2c7adb1f109c924b33ae0e3) from a cold cache. Changing a version can
+# change the pickled model or the prediction, so keep this file pinned.
+cloudpickle==3.1.2
+joblib==1.5.3
+narwhals==2.28.0
+numpy==2.4.6
+pandas==3.0.6
+python-dateutil==4.0.0
+scikit-learn==1.8.0
+scipy==1.17.1
+threadpoolctl==3.8.0
+tzdata==2026.6

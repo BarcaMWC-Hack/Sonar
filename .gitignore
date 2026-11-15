@@ -26,6 +26,10 @@ evaluation/results/*.csv
 evaluation/reports/
 evaluation/scoreboard.csv
 
+# new_model's submission is generated, not committed. Regenerate it with
+# `python new_model/main.py` and check the recorded md5 in new_model/README.md.
+new_model/submission.csv
+
 # -- gated data --------------------------------------------------------------------------------
 # data/ is committed empty, with only its README, so the folder participants are told to unpack
 # into actually exists in a fresh clone. Everything they put in it stays out of git.
