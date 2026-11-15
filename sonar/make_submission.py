@@ -4,10 +4,13 @@
     python -m sonar.make_submission --name try2      # evaluation/results/try2.csv
     python -m sonar.make_submission --team nearest   # baseline team call, for comparison
     python -m sonar.make_submission --no-localize    # switches where the decoder puts them
+    python -m sonar.make_submission --deadball weak  # earlier build: dead-ball fit on weak labels
 
 How a frame gets its label:
   - outside the two graded halves: X (never scored)
-  - the dead-ball detector says dead: D
+  - the dead-ball detector says dead: D. Its weights are the stored fit on 27 open matches'
+    true dead flags (tools/open_fit.py); --deadball weak refits them on this match's Smart
+    Tagging weak labels instead
   - otherwise the frame is inside an alive stretch, and gets the team call. By default that is
     sonar/possession.py (control-weighted evidence, switching cost). With --team nearest it is a
     centred majority vote of the nearest-player codes, kept inside the stretch so a vote never
@@ -81,6 +84,32 @@ def build_labels(dead, codes, game=GAME, window=TEAM_WINDOW):
     return labels
 
 
+def fill_graded_abstentions(labels, game=GAME):
+    """Write out what the scorer does with X on graded frames.
+
+    The scorer carries the last label forward within each half (back-filling at the half's head)
+    before it matches possessions, and that last label can be D. Writing it explicitly leaves
+    spellF1 unchanged by construction and cannot lower macroF1, where X always counts as a miss.
+    """
+    out = labels.copy()
+    for _, first, last in half_video_blocks(game):
+        seg = out[first:last + 1]
+        known = np.flatnonzero(seg != "X")
+        if not len(known):
+            continue
+        idx = np.maximum.accumulate(np.where(seg != "X", np.arange(len(seg)), -1))
+        idx[idx < 0] = known[0]
+        out[first:last + 1] = seg[idx]
+    return out
+
+
+def check_release(labels):
+    """Assertions the submitted file must satisfy (format checks live in the official validator)."""
+    graded = deadball.graded_mask(len(labels))
+    assert not np.any(labels[graded] == "X"), "graded frames must not be X"
+    assert np.all(labels[deadball.known_dead_mask(len(labels))] == "D"), "pre-kickoff must be D"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--name", default="sonar")
@@ -88,6 +117,12 @@ def main():
     parser.add_argument("--team", choices=("control", "nearest"), default="control",
                         help="control: sonar/possession.py (default); nearest: the baseline's "
                              "nearest player with a +/-2 s majority vote")
+    parser.add_argument("--deadball", choices=("open", "weak"), default="open",
+                        help="open (default): the dead-ball fit on the open IDSSE and SkillCorner "
+                             "matches' true dead flags (sonar/deadball_open_weights.json); weak: "
+                             "fit on this match's Smart Tagging weak labels (the earlier build)")
+    parser.add_argument("--possession-cost", type=float, default=possession.SWITCH_COST,
+                        help="switching cost of the possession decoder (default %(default)s)")
     parser.add_argument("--no-localize", action="store_true",
                         help="keep possession switches where the decoder puts them instead of "
                              "moving them to the new team's first touch (control only)")
@@ -95,15 +130,19 @@ def main():
 
     data = atd.load()
     events = load_smart_tagging.load()
-    dead, _ = deadball.detect(data, events)
+    dead, _ = deadball.detect(data, events,
+                              weights="open" if args.deadball == "open" else None)
     if args.team == "control":
         evidence, details = possession.evidence(data, dead)
-        labels = possession.labels(dead, evidence, possession.tag_evidence(events, len(dead)))
+        labels = possession.labels(dead, evidence, possession.tag_evidence(events, len(dead)),
+                                   switch_cost=args.possession_cost)
         if not args.no_localize:
             labels, _ = possession.localize(labels, dead, details["ball"], data)
     else:
         labels = build_labels(dead, possession_baseline.nearest_team(data))
 
+    labels = fill_graded_abstentions(labels)
+    check_release(labels)
     path = write_submission(os.path.join(args.out, args.name + ".csv"), labels)
     graded = deadball.graded_mask(len(labels))
     counts = {k: int(np.sum(labels[graded] == k)) for k in "HADX"}
