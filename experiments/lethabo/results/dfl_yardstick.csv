@@ -1,0 +1,85 @@
+match,condition,method,spellF1,D_F1,D_recall
+J03WMX,noisy,ours,0.41612,0.92469,0.98351
+J03WMX,noisy,ours, true dead,0.50560,1.00000,1.00000
+J03WMX,noisy,our dead, true team,0.84323,0.92469,0.98351
+J03WMX,noisy,baseline_smooth25,0.26701,0.80736,0.73092
+J03WMX,noisy,baseline_smooth50,0.27033,0.77615,0.66642
+J03WMX,noisy,baseline_smooth125,0.20749,0.66517,0.50281
+J03WMX,clean,ours,0.44549,0.95309,0.99330
+J03WMX,clean,ours, true dead,0.51842,1.00000,1.00000
+J03WMX,clean,our dead, true team,0.88332,0.95309,0.99330
+J03WMX,clean,baseline_smooth25,0.30215,0.00000,0.00000
+J03WMX,clean,baseline_smooth50,0.30723,0.00000,0.00000
+J03WMX,clean,baseline_smooth125,0.21932,0.00000,0.00000
+J03WN1,noisy,ours,0.40374,0.94682,0.97146
+J03WN1,noisy,ours, true dead,0.47135,1.00000,1.00000
+J03WN1,noisy,our dead, true team,0.86172,0.94682,0.97146
+J03WN1,noisy,baseline_smooth25,0.28355,0.86808,0.80952
+J03WN1,noisy,baseline_smooth50,0.26848,0.83799,0.74705
+J03WN1,noisy,baseline_smooth125,0.18102,0.72678,0.57257
+J03WN1,clean,ours,0.46129,0.96868,0.99269
+J03WN1,clean,ours, true dead,0.52667,1.00000,1.00000
+J03WN1,clean,our dead, true team,0.87748,0.96868,0.99269
+J03WN1,clean,baseline_smooth25,0.28097,0.00000,0.00000
+J03WN1,clean,baseline_smooth50,0.28107,0.00000,0.00000
+J03WN1,clean,baseline_smooth125,0.18614,0.00000,0.00000
+J03WPY,noisy,ours,0.43058,0.92000,0.96930
+J03WPY,noisy,ours, true dead,0.51084,1.00000,1.00000
+J03WPY,noisy,our dead, true team,0.82503,0.92000,0.96930
+J03WPY,noisy,baseline_smooth25,0.28322,0.85726,0.80542
+J03WPY,noisy,baseline_smooth50,0.30064,0.82786,0.74025
+J03WPY,noisy,baseline_smooth125,0.21934,0.72778,0.57601
+J03WPY,clean,ours,0.49020,0.94634,0.98743
+J03WPY,clean,ours, true dead,0.54485,1.00000,1.00000
+J03WPY,clean,our dead, true team,0.84211,0.94634,0.98743
+J03WPY,clean,baseline_smooth25,0.29602,0.00000,0.00000
+J03WPY,clean,baseline_smooth50,0.31709,0.00000,0.00000
+J03WPY,clean,baseline_smooth125,0.22866,0.00000,0.00000
+J03WOH,noisy,ours,0.51288,0.93555,0.96403
+J03WOH,noisy,ours, true dead,0.56314,1.00000,1.00000
+J03WOH,noisy,our dead, true team,0.83399,0.93555,0.96403
+J03WOH,noisy,baseline_smooth25,0.27988,0.87818,0.83231
+J03WOH,noisy,baseline_smooth50,0.29401,0.84764,0.76546
+J03WOH,noisy,baseline_smooth125,0.21058,0.73773,0.58991
+J03WOH,clean,ours,0.52885,0.95494,0.99144
+J03WOH,clean,ours, true dead,0.58887,1.00000,1.00000
+J03WOH,clean,our dead, true team,0.84450,0.95494,0.99144
+J03WOH,clean,baseline_smooth25,0.28932,0.00000,0.00000
+J03WOH,clean,baseline_smooth50,0.30115,0.00000,0.00000
+J03WOH,clean,baseline_smooth125,0.19828,0.00000,0.00000
+J03WQQ,noisy,ours,0.48662,0.90668,0.95822
+J03WQQ,noisy,ours, true dead,0.59010,1.00000,1.00000
+J03WQQ,noisy,our dead, true team,0.79315,0.90668,0.95822
+J03WQQ,noisy,baseline_smooth25,0.29258,0.73665,0.63261
+J03WQQ,noisy,baseline_smooth50,0.30279,0.69742,0.56667
+J03WQQ,noisy,baseline_smooth125,0.21885,0.55670,0.39144
+J03WQQ,clean,ours,0.53149,0.93354,0.98521
+J03WQQ,clean,ours, true dead,0.63193,1.00000,1.00000
+J03WQQ,clean,our dead, true team,0.81187,0.93354,0.98521
+J03WQQ,clean,baseline_smooth25,0.32510,0.00000,0.00000
+J03WQQ,clean,baseline_smooth50,0.35931,0.00000,0.00000
+J03WQQ,clean,baseline_smooth125,0.24167,0.00000,0.00000
+J03WOY,noisy,ours,0.47778,0.92947,0.96169
+J03WOY,noisy,ours, true dead,0.52800,1.00000,1.00000
+J03WOY,noisy,our dead, true team,0.82845,0.92947,0.96169
+J03WOY,noisy,baseline_smooth25,0.28832,0.84717,0.78276
+J03WOY,noisy,baseline_smooth50,0.29331,0.81382,0.71460
+J03WOY,noisy,baseline_smooth125,0.20729,0.68867,0.52844
+J03WOY,clean,ours,0.49170,0.95422,0.98626
+J03WOY,clean,ours, true dead,0.53460,1.00000,1.00000
+J03WOY,clean,our dead, true team,0.85270,0.95422,0.98626
+J03WOY,clean,baseline_smooth25,0.26495,0.00000,0.00000
+J03WOY,clean,baseline_smooth50,0.27150,0.00000,0.00000
+J03WOY,clean,baseline_smooth125,0.19941,0.00000,0.00000
+J03WR9,noisy,ours,0.49683,0.94129,0.97818
+J03WR9,noisy,ours, true dead,0.55856,1.00000,1.00000
+J03WR9,noisy,our dead, true team,0.82324,0.94129,0.97818
+J03WR9,noisy,baseline_smooth25,0.30283,0.87646,0.84216
+J03WR9,noisy,baseline_smooth50,0.30226,0.84740,0.77323
+J03WR9,noisy,baseline_smooth125,0.24809,0.73926,0.59007
+J03WR9,clean,ours,0.54849,0.95876,0.99172
+J03WR9,clean,ours, true dead,0.60750,1.00000,1.00000
+J03WR9,clean,our dead, true team,0.85144,0.95876,0.99172
+J03WR9,clean,baseline_smooth25,0.31512,0.00000,0.00000
+J03WR9,clean,baseline_smooth50,0.31520,0.00000,0.00000
+J03WR9,clean,baseline_smooth125,0.24571,0.00000,0.00000
