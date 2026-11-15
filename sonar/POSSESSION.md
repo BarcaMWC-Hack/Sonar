@@ -34,7 +34,7 @@ through loose balls, so frames where nobody controls the ball should not vote.
    team's nearest player is closer.
 2. **Team shape** (`sonar/team_shape.py`): the team with the ball spreads out. Width alone (the
    spread of the players' y) picks the team in control with AUC 0.86, and a small logistic
-   model on width, length, forward speed and block position reaches 0.85-0.87 when fitted on
+   model on width, length, forward speed and block position reaches 0.85-0.86 when fitted on
    one half and scored on the other. Its labels are the live frames where the ball evidence is
    clear, not any ground truth. Weighted at 0.05 per frame it is a slow push: it decides
    whether a run of touches really was a change, while the touches still set where it lands.
@@ -50,8 +50,9 @@ through loose balls, so frames where nobody controls the ball should not vote.
    CHALLENGE.md: possession changes when the other team "gains controlled possession", and
    loose play stays with the last team. `--no-localize` turns it off.
 5. **Smart Tagging names the team for a live stretch with no ball or team-shape evidence.** Team
-   shape is available on every frame, so on the delivered file this reaches at most one of the 81
-   live stretches; 8 stretches have no ball evidence and take their team from shape. The phases it
+   shape is available on every frame, so on the delivered file the tags decide none of the 83
+   live stretches: 77 have ball evidence, 5 have team shape only, and 1 has neither. Labels are
+   the same with and without the tags. The phases it
    reads agree with the controlled call 63-87% of the time (Build Up 87%, Progression 83%, Long Ball
    63%), but their edges are seconds off, so they never place a change. (A first version let them
    push on every untracked frame, which let tag edges move possession changes.) The "Defending in …"
@@ -69,7 +70,8 @@ through loose balls, so frames where nobody controls the ball should not vote.
 
 \*Neither the ball nor the shape evidence uses the tags, so agreement is an independent check.
 It rises as possessions get longer (tags are long phases), so the count is fixed from
-football's typical 10-15 s possession, and agreement only compares settings at a matched count.
+a rule of thumb for typical possession length (10-15 s; the repo has no source for it), and
+agreement only compares settings at a matched count.
 
 Adding team shape, at switch cost 3 (from `possession_report.py`):
 
@@ -82,8 +84,8 @@ Adding team shape, at switch cost 3 (from `possession_report.py`):
 
 Shape lifts agreement by about five points at the same count. Larger weights are no clearer, and
 shape lags turnovers, so the smallest weight is kept. The cost is more quick reversals (32 → 41);
-some will be real turnovers won straight back, some flicker. The final file has 277 possessions
-of mean 14.2 s, and Barça has 56% of live time.
+some will be real turnovers won straight back, some flicker. The final file has 286 possessions
+of mean 13.1 s, and Barça has 56% of live time.
 
 Switch placement, from `possession_errors.py`: of 197 switches, 152 move (95 by under 0.4 s, 52
 later by 0.4-3 s, 14 earlier) and 45 stay. The new team is touching or controlling the ball
@@ -104,14 +106,16 @@ results. Shape weight 0.05, first-touch placement on:
 
 | switch cost | game 1 | game 2 | mean |
 | --- | --- | --- | --- |
-| 1.5 | 0.694 | 0.672 | 0.683 |
-| **3.0 (chosen)** | 0.665 | 0.676 | 0.671 |
-| 2.0 | 0.689 | 0.688 | 0.688 |
+| 1.5 | 0.678 | 0.672 | 0.675 |
+| **3.0 (chosen)** | 0.662 | 0.682 | 0.672 |
+| 2.0 | 0.678 | 0.690 | 0.684 |
 
-Held out, the sign depends on which game picks the setting: 1.5, chosen on game 1, loses 0.004 on
-game 2; 2.0, chosen on game 2, gains 0.024 on game 1. The truth starts each change at the new team's
+Held out with first-touch placement off, 2.0 is picked on both games and gains 0.005 and 0.006 over
+3.0: small, and on a simulated truth. The truth starts each change at the new team's
 event, which may favour first-touch placement and a lower switch cost by construction. The default
-stays at 3.0 until the team decides; 2.0 is the candidate.
+is 3.0, chosen on 2026-11-09. At 2.0 there are 326 possessions instead of 286, with 25 more under
+2 s and 26 more reversed within 3 s. The choice rests on those short and reversed possessions, not
+on possession length.
 
 ## Public 5 minutes, as a correctness check only
 

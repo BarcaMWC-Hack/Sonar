@@ -75,8 +75,8 @@ def main():
         dead = truth == "D"
         set_blocks(game, len(truth), truth)
         ball = possession.ball_evidence(data)
-        x = team_shape.features(data)
         alive = deadball.graded_mask(len(dead)) & ~dead
+        x = team_shape.centred(team_shape.features(data), alive)
         w = team_shape.fit(x, ball, alive)
         parts = (ball, x, w, team_shape.log_odds(x, w), alive)
         for g in grid:

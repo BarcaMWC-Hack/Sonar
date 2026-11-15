@@ -21,6 +21,7 @@ Nothing here reads evaluation/gt. The public ground truth is used afterwards, by
 correctness check only.
 """
 
+import json
 import math
 import os
 import sys
@@ -34,6 +35,7 @@ from games import GAME, half_video_blocks  # noqa: E402
 from sonar import deadball_features as dbf  # noqa: E402
 
 # Params
+OPEN_WEIGHTS = os.path.join(HERE, "deadball_open_weights.json")
 FPS = 25
 SECOND_HALF_KICKOFF = 113742        # FAQ.md: 110808..113741 are graded and all D
 PRE_SETPIECE_S = 8
@@ -43,7 +45,9 @@ OPEN_PLAY_TRIM_S = 1
 SETPIECE_GUARD_S = 10
 OOB_MARGIN = 0.5                    # metres beyond a line before "out" counts
 OOB_MEMORY_S = 10                   # a ball seen out stays evidence for this long
-L2 = 1.0
+# Stoppages, not frames, are the independent examples: about 25 per half support these weights.
+# Set by the lowest held-out log loss on the weak labels (fit one half, score the other).
+L2 = 100.0
 WEIGHT_DECIMALS = 4                 # rounded so the fit is identical across BLAS builds
 
 # Viterbi. TEMPERATURE scales per-frame evidence down because the features are smoothed over
@@ -66,6 +70,12 @@ def graded_mask(n, game=GAME):
     for _, first, last in half_video_blocks(game):
         mask[first:last + 1] = True
     return mask
+
+
+def require_graded(mask, game=GAME):
+    """Stop if a training mask contains an ungraded frame."""
+    if np.any(mask & ~graded_mask(len(mask), game)):
+        raise ValueError("training frames must all be graded")
 
 
 def interval_mask(n, intervals):
@@ -117,7 +127,8 @@ def recent(mask, frames):
 
 def design(f):
     """(matrix, column names). Continuous columns are clipped, never standardised by the data,
-    so a column means the same thing on any match."""
+    so a column means the same thing on any match. A fast ball and a touchline restart spot are
+    left out: their weights change sign between the halves."""
     with np.errstate(invalid="ignore"):
         known = f["ball_known"]
         bs = f["ball_speed"]
@@ -136,11 +147,9 @@ def design(f):
             ("oob_recent", recent(oob, OOB_MEMORY_S * FPS).astype(float)),
             ("ball_still", (bs < 0.5).astype(float)),
             ("ball_slow", ((bs >= 0.5) & (bs < 2.0)).astype(float)),
-            ("ball_fast", (bs > 8.0).astype(float)),
             ("spot_centre", (f["spot"] == dbf.SPOT_CENTRE).astype(float)),
             ("spot_corner", (f["spot"] == dbf.SPOT_CORNER).astype(float)),
             ("spot_goal_area", (f["spot"] == dbf.SPOT_GOAL_AREA).astype(float)),
-            ("spot_touchline", (f["spot"] == dbf.SPOT_TOUCHLINE).astype(float)),
             ("few_visible", (f["n_visible"] < 18).astype(float)),
         ]
     names = [name for name, _ in columns]
@@ -275,9 +284,10 @@ def crossing_starts(ball_oob):
     return starts[(stops - starts) >= CROSS_MIN_FRAMES]
 
 
-def long_gaps(known):
+def long_gaps(known, present=None):
     """(starts, stops) of missing-ball runs of at least LONG_GAP frames; stop = first seen frame."""
-    edges = np.diff(np.concatenate(([0], (~known).astype(np.int8), [0])))
+    missing = ~known if present is None else ~known & present
+    edges = np.diff(np.concatenate(([0], missing.astype(np.int8), [0])))
     starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
     keep = (stops - starts) >= LONG_GAP
     return starts[keep], stops[keep]
@@ -312,7 +322,7 @@ def refine(dead, data, features, game=GAME):
     """(refined dead mask, counts of which rule moved each edge, final stoppages with rules)."""
     ball_xy = data["ball"][:, :2].astype(np.float64)
     crossings = crossing_starts(features["ball_oob"])
-    gaps, gap_ends = long_gaps(features["ball_known"])
+    gaps, gap_ends = long_gaps(features["ball_known"], features["frame_present"])
     end_events = {"kick": kick_frames(ball_xy), "strike": strike_onsets(ball_xy),
                   "reacquire": gap_ends}
     contrast = motion_contrast(features["mean_speed_raw"])
@@ -389,14 +399,32 @@ def refine(dead, data, features, game=GAME):
     return out, counts, kept
 
 
-def detect(data, events, game=GAME, refine_edges=True, **decode_kwargs):
-    """(dead mask, details). details carries the fitted weights and the per-frame LLR."""
+def open_weights(names, path=OPEN_WEIGHTS):
+    """Weights fitted on the open IDSSE and SkillCorner matches' true dead flags
+    (tools/open_fit.py)."""
+    with open(path) as f:
+        stored = json.load(f)
+    if stored["names"] != ["bias"] + list(names):
+        raise ValueError("{} was fitted on other columns; re-run tools/open_fit.py".format(path))
+    return np.array(stored["weights"])
+
+
+def detect(data, events, game=GAME, refine_edges=True, weights=None, **decode_kwargs):
+    """(dead mask, details). details carries the fitted weights and the per-frame LLR.
+
+    weights=None fits the model on this match's Smart Tagging weak labels (the release model);
+    weights="open" uses the stored fit on the open IDSSE and SkillCorner matches' true dead
+    flags instead."""
     features = dbf.compute(data)
     x, names = design(features)
     n = len(x)
     weak_dead, weak_alive = weak_labels(n, events, game)
     train = weak_dead | weak_alive
-    w = fit_logistic(x[train], weak_dead[train].astype(float))
+    if weights is None:
+        require_graded(train, game)
+        w = fit_logistic(x[train], weak_dead[train].astype(float))
+    else:
+        w = open_weights(names) if isinstance(weights, str) else np.asarray(weights)
     llr = log_likelihood_ratio(x, w)
     viterbi_dead = decode(llr, n, game, **decode_kwargs)
     dead, refine_counts, stoppages = (refine(viterbi_dead, data, features, game) if refine_edges

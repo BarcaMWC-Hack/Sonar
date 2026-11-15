@@ -1,5 +1,10 @@
 # More than a Hack 2027 — Phase 1: Ball Possession
 
+## Reproduce Team Sonar's submission
+
+See [the technical submission](docs/TECHNICAL.md) for the frozen environment, required
+organizer-supplied inputs, regeneration command and exact CSV checksum.
+
 **Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
 and the [Mobile World Capital Barcelona](https://www.mwcbarcelona.com)**, at the Talent Arena in Barcelona.
 

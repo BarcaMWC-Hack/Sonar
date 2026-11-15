@@ -15,10 +15,10 @@ All three print scores, counts and shares only, so their output is safe to paste
 
 1. **Features** (`sonar/deadball_features.py`): player motion (mean speed, share moving, share
    sprinting, the fastest three), players off the pitch, kick-off line-up, ball over a line, ball
-   speed from positions, long ball gaps, and where the ball sits (centre spot, corner, goal area,
-   touchline).
+   speed from positions, long ball gaps, and where the ball sits (centre spot, corner, goal
+   area).
 2. **Logistic model trained on weak labels** (`sonar/deadball.py`). Dead = the 8 s before each
-   Smart Tagging `SET PIECES` interval, plus 110808..113741 (FAQ.md: graded and all D). Alive =
+   Smart Tagging `SET PIECES` interval (the FAQ's pre-kickoff frames decide labels, not training). Alive =
    inside open-play phases, trimmed and kept 10 s clear of set pieces. Class-balanced, so its
    logit is a likelihood ratio; a 40% dead prior is added separately.
 3. **Two-state Viterbi** per half with a switching cost, so a stoppage needs a few seconds of

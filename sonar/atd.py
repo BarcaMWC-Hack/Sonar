@@ -14,7 +14,9 @@ and one ball group, three values each. The ball's third value is NaN on 91% of t
 its position is known, so ball speed should be derived from positions rather than read.
 
 The cache lives in data/cache/ (git-ignored with the rest of data/) and is rebuilt whenever the
-raw file's size or modification time changes, so it can never go stale silently.
+raw file's content changes, so it can never go stale silently.
+
+Ungraded frames are blanked to NaN on load, so no model or smoothing window can reach them.
 """
 
 import io
@@ -29,6 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 from games import GAME, GAMES, DATA_DIR, require, source_frames  # noqa: E402
+from sonar.splits import graded_mask  # noqa: E402
 from starter.baseline import team_of_each_track  # noqa: E402
 
 # Params
@@ -73,11 +76,12 @@ def _content_hash(path):
     return np.frombuffer(digest.digest(), dtype=np.int64)
 
 
-def load(game=GAME, data_dir=None, rebuild=False):
+def load(game=GAME, data_dir=None, rebuild=False, graded_only=True):
     """dict with ball, players, team and pitch (length, width) in metres."""
     meta_path, raw_path = require(["atd_meta", "atd_raw"], game, data_dir)
     n_frames = source_frames("tactical", game)
     length, width = GAMES[game]["pitch"]
+    keep = graded_mask(n_frames, game) if graded_only else None
     # Keyed by the file CONTENT (SHA-256), not its size and time, so a different input can never
     # silently reuse an old cache.
     stamp = np.concatenate(([CACHE_VERSION, n_frames], _content_hash(raw_path))).astype(np.int64)
@@ -86,18 +90,21 @@ def load(game=GAME, data_dir=None, rebuild=False):
     if not rebuild and os.path.isfile(path):
         cached = np.load(path)
         if np.array_equal(cached["stamp"], stamp):
-            return _assemble(cached["flat"], team_of_each_track(meta_path), length, width)
+            return _assemble(cached["flat"], team_of_each_track(meta_path), length, width, keep)
 
     flat = _parse(raw_path, n_frames)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     np.savez(path, flat=flat, stamp=stamp)
-    return _assemble(flat, team_of_each_track(meta_path), length, width)
+    return _assemble(flat, team_of_each_track(meta_path), length, width, keep)
 
 
-def _assemble(flat, team, length, width):
+def _assemble(flat, team, length, width, keep=None):
     scale = np.array([length, width, 1.0], dtype=np.float32)
     players = flat[:, :N_SLOTS * VALUES_PER_GROUP].reshape(-1, N_SLOTS, VALUES_PER_GROUP) * scale
     ball = flat[:, N_SLOTS * VALUES_PER_GROUP:] * scale
+    if keep is not None:
+        players[~keep] = np.nan
+        ball[~keep] = np.nan
     return {"ball": ball, "players": players, "team": team, "pitch": (length, width)}
 
 

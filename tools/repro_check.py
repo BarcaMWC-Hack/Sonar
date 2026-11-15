@@ -1,74 +1,77 @@
-"""Clean-environment reproduction check: the submission must regenerate byte for byte.
-
-    python tools/repro_check.py --expect MD5_OF_THE_SUBMITTED_CSV
-
-Builds a fresh virtual environment from requirements-sonar.txt (exact versions), then regenerates
-the submission twice, each time from a cold data cache, and compares the MD5 of the two files. It
-also runs the official validator on the result. Exits 0 only if both files are identical AND equal
-to the recorded hash of the submitted file (--expect is required). Needs the match data in
-data/tactical/. It deletes and rebuilds data/cache/ (git-ignored), writes its two scratch CSVs to a
-temporary folder, and prints only hashes and the tools' own summary counts.
-"""
+"""Verify two isolated, cold-cache builds against the recorded submission MD5."""
 
 import argparse
 import hashlib
+from importlib import metadata
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-RESULTS = os.path.join(ROOT, "evaluation", "results")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from games import require  # noqa: E402
 
 
-def md5(path):
-    digest = hashlib.md5()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def verify_environment():
+    if sys.version_info[:3] != (3, 11, 9):
+        sys.exit("Use Python 3.11.9 for the frozen release.")
+    for package, version in (("numpy", "2.4.6"), ("pandas", "3.0.6"),
+                             ("python-dateutil", "2.9.0.post0"), ("six", "1.17.0")):
+        if metadata.version(package) != version:
+            sys.exit(f"Expected {package}=={version}.")
+    if sys.platform == "win32" and metadata.version("tzdata") != "2026.5":
+        sys.exit("Expected tzdata==2026.5 on Windows.")
 
 
-def run(*cmd):
-    subprocess.run(list(cmd), cwd=ROOT, check=True)
+def run(*cmd, env=None):
+    subprocess.run(cmd, cwd=ROOT, env=env, check=True)
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--expect", required=True, help="MD5 of the submitted CSV")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--expect", required=True, help="MD5 of the exact file to upload")
+    parser.add_argument("--existing-env", action="store_true",
+                        help="reuse an environment with the exact pinned dependencies")
     args = parser.parse_args()
+    sources = [Path(path) for path in require(("atd_raw", "atd_meta", "smart_tagging"))]
+    with tempfile.TemporaryDirectory(prefix="sonar_repro_") as directory:
+        scratch = Path(directory)
+        py = sys.executable
+        if args.existing_env:
+            verify_environment()
+        else:
+            venv = scratch / "venv"
+            run(py, "-m", "venv", venv)
+            py = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+            run(py, "-m", "pip", "install", "-r", "requirements-sonar.txt")
+            run(py, "-B", "-c",
+                "from tools.repro_check import verify_environment; verify_environment()")
 
-    print("Python", sys.version.split()[0])
-    venv = tempfile.mkdtemp(prefix="sonar_repro_")
-    scratch = tempfile.mkdtemp(prefix="sonar_repro_out_")
-    try:
-        run(sys.executable, "-m", "venv", venv)
-        py = os.path.join(venv, "Scripts" if os.name == "nt" else "bin",
-                          "python.exe" if os.name == "nt" else "python")
-        run(py, "-m", "pip", "install", "-q", "-r", "requirements-sonar.txt")
-        hashes, files = [], []
-        for i in range(2):
-            cache = os.path.join(ROOT, "data", "cache")
-            shutil.rmtree(cache, ignore_errors=True)
-            if os.path.exists(cache):
-                sys.exit("could not clear " + cache)
-            name = "repro_{}".format(i)
-            run(py, "-m", "sonar.make_submission", "--name", name, "--out", scratch)
-            path = os.path.join(scratch, name + ".csv")
-            files.append(path)
-            hashes.append(md5(path))
-        run(py, os.path.join("evaluation", "validate_submission.py"), files[-1])
-        print("md5 run 1: {}\nmd5 run 2: {}".format(*hashes))
-        same = hashes[0] == hashes[1]
-        match = hashes[0] == args.expect.lower()
-        print("identical across clean runs:", "YES" if same else "NO")
-        print("equals the submitted file's hash {}:".format(args.expect), "YES" if match else "NO")
-        sys.exit(0 if same and match else 1)
-    finally:
-        shutil.rmtree(venv, ignore_errors=True)
-        shutil.rmtree(scratch, ignore_errors=True)
+        hashes = []
+        for index in (1, 2):
+            data = scratch / f"input_{index}"
+            tactical = data / "tactical"
+            tactical.mkdir(parents=True)
+            for source in sources:
+                shutil.copyfile(source, tactical / source.name)
+            env = {**os.environ, "MTAH_DATA_DIR": str(data), "OPENBLAS_NUM_THREADS": "1",
+                   "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "PYTHONHASHSEED": "0"}
+            name = f"repro_{index}"
+            run(py, "-B", "-m", "sonar.make_submission", "--name", name, "--out", scratch, env=env)
+            csv = scratch / f"{name}.csv"
+            with csv.open("rb") as handle:
+                hashes.append(hashlib.file_digest(handle, "md5").hexdigest())
+            run(py, "-B", "evaluation/validate_submission.py", csv)
+            run(py, "-B", "tools/check_submission.py", csv)
+
+        print("MD5 run 1:", hashes[0])
+        print("MD5 run 2:", hashes[1])
+        if hashes != [args.expect.lower()] * 2:
+            sys.exit("FAILED: the two builds must both equal the expected upload hash.")
+        print("PASS: both independent cold builds match the expected upload file.")
 
 
 if __name__ == "__main__":
